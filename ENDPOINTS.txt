@@ -1,0 +1,46 @@
+# API ENDPOINTS FOR TESTING
+
+## AUTH ENDPOINTS
+POST   /api/auth/register
+POST   /api/auth/login
+
+## MEDIA ENDPOINTS
+GET    /api/media
+GET    /api/media/:id
+GET    /api/media/:id/protected (requires auth, generates signed download URL)
+POST   /api/media (create photo/video)
+PUT    /api/media/:id (update media details)
+PUT    /api/media/:id/price (update price - photographer only)
+DELETE /api/media/:id
+
+## CART ENDPOINTS
+GET    /api/payments/cart/:userId
+POST   /api/payments/cart/add
+POST   /api/payments/cart/remove
+DELETE /api/payments/cart/:userId
+
+## PAYMENT ENDPOINTS
+POST   /api/payments/mpesa (initiate MPesa payment)
+POST   /api/payments/callback (MPesa callback)
+POST   /api/payments/buy (direct purchase with mock payment)
+GET    /api/payments/wallet/:userId (view wallet balance)
+GET    /api/payments/transactions/:userId (purchase history)
+GET    /api/payments/purchase-history/:userId (detailed purchase history with signed URLs)
+GET    /api/payments/earnings/:photographerId (photographer sales)
+GET    /api/payments/earnings-summary/:photographerId (comprehensive earnings summary)
+GET    /api/payments/admin/dashboard (admin revenue dashboard)
+
+## RECEIPT ENDPOINTS
+POST   /api/payments/receipt/create (create receipt after payment)
+GET    /api/payments/receipt/:receiptId (view individual receipt)
+GET    /api/payments/receipts/:userId (view user receipts)
+GET    /api/payments/admin/receipts (admin view all receipts)
+
+## REFUND ENDPOINTS
+POST   /api/payments/refund/request (request refund)
+GET    /api/payments/refunds/:userId (view user refunds)
+POST   /api/payments/refund/approve (admin approve refund)
+POST   /api/payments/refund/reject (admin reject refund)
+POST   /api/payments/refund/process (admin process refund - credit wallet)
+GET    /api/payments/admin/refunds (admin view all refunds)
+

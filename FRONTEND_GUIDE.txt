@@ -1,0 +1,357 @@
+# FRONTEND FEATURES & API INTEGRATION GUIDE
+
+## 1. AUTHENTICATION
+**Location:** /pages/auth or /components/Auth
+
+### Features:
+- [ ] Register Page
+  - API: POST /api/auth/register
+  - Fields: username, email, password, profilePicture, role (user/photographer/admin)
+  - Response: user object with ID
+
+- [ ] Login Page
+  - API: POST /api/auth/login
+  - Fields: email, password
+  - Response: user object with token (implement JWT)
+  - Store user in localStorage/context
+
+- [ ] Auth Context/State Management
+  - Store user info globally
+  - Handle logout (clear localStorage)
+
+
+## 2. HOME/BROWSE PHOTOS
+**Location:** /pages/Home or /components/MediaGallery
+
+### Features:
+- [ ] Display All Photos Grid
+  - API: GET /api/media
+  - Show: title, thumbnail, photographer name, price
+  - Add search/filter functionality
+  
+- [ ] Photo Search
+  - Search by: title, type (photo/video), price range
+  - API: GET /api/media/search?title=...&mediaType=...&minPrice=...&maxPrice=...
+
+- [ ] Photo Details Modal/Page
+  - API: GET /api/media/:id
+  - Show: full image, description, photographer profile, price
+  - Buttons: "Add to Cart", "Buy Now"
+
+- [ ] Right-Click Protection (Frontend)
+  - Disable right-click on images: e.addEventListener('contextmenu', e.preventDefault())
+  - Add watermark overlay on images
+  - Disable drag-drop of images
+
+
+## 3. SHOPPING CART
+**Location:** /pages/Cart or /components/Cart
+
+### Features:
+- [ ] View Cart
+  - API: GET /api/payments/cart/:userId
+  - Display: all items, quantities, total price
+  - Buttons: Remove item, Clear cart, Checkout
+
+- [ ] Add to Cart
+  - API: POST /api/payments/cart/add
+  - Body: {userId, mediaId}
+  - Show success toast notification
+
+- [ ] Remove from Cart
+  - API: POST /api/payments/cart/remove
+  - Body: {userId, mediaId}
+  - Update cart display
+
+- [ ] Clear Cart
+  - API: DELETE /api/payments/cart/:userId
+  - Confirmation dialog before clearing
+
+- [ ] Cart Icon Badge
+  - Show item count in navigation
+
+
+## 4. PAYMENT & CHECKOUT
+**Location:** /pages/Checkout or /components/Payment
+
+### Features:
+- [ ] Checkout Page
+  - Show cart summary
+  - Display total amount
+  - Choose payment method (MPesa/Credit Card)
+
+- [ ] MPesa Payment
+  - API: POST /api/payments/mpesa
+  - Body: {mediaId, buyerPhone, buyerId}
+  - Show STK popup prompt
+  - Handle payment response
+
+- [ ] Mock Payment (Testing)
+  - API: POST /api/payments/buy
+  - Body: {mediaId, buyerId}
+  - Instant payment confirmation
+  - Redirect to receipt
+
+- [ ] Payment Success Page
+  - Show order confirmation
+  - Display receipt number
+  - Link to download receipt
+
+
+## 5. RECEIPTS & INVOICES
+**Location:** /pages/Receipt or /components/Receipt
+
+### Features:
+- [ ] View Receipt
+  - API: GET /api/payments/receipt/:receiptId
+  - Show: receipt number, date, items, total, breakdown
+
+- [ ] User Receipts List
+  - API: GET /api/payments/receipts/:userId
+  - Display all past receipts
+  - Link to view each receipt
+  - Download receipt as PDF
+
+- [ ] PDF Download
+  - Convert receipt to PDF (use jsPDF library)
+  - Email receipt option (optional)
+
+
+## 6. USER PURCHASE HISTORY
+**Location:** /pages/MyPurchases or /pages/Dashboard
+
+### Features:
+- [ ] View Purchase History
+  - API: GET /api/payments/purchase-history/:userId
+  - Show: photos purchased, dates, prices
+  - Status: completed, refunded
+
+- [ ] Download Purchased Media
+  - API: GET /api/payments/purchase-history/:userId (returns signed URLs)
+  - Button: Download with signed URL protection
+  - Expiration: signed URLs expire after 1 hour
+
+- [ ] Filter/Sort Purchases
+  - By date, price, photographer
+  - Search by photo name
+
+
+## 7. REFUND MANAGEMENT
+**Location:** /pages/MyPurchases or /pages/Account
+
+### Features:
+- [ ] Request Refund
+  - API: POST /api/payments/refund/request
+  - Body: {paymentId, reason}
+  - Show: confirmation message
+
+- [ ] View Refund Status
+  - API: GET /api/payments/refunds/:userId
+  - Show: all refund requests with status
+  - Status: pending, approved, rejected, processed
+
+- [ ] Refund Details
+  - Show reason, amount, status
+  - If rejected: show admin's rejection reason
+  - If processed: confirmation of wallet credit
+
+
+## 8. USER WALLET
+**Location:** /pages/Wallet or /components/WalletCard
+
+### Features:
+- [ ] View Wallet Balance
+  - API: GET /api/payments/wallet/:userId
+  - Show: current balance, total earned, total withdrawn
+
+- [ ] Wallet History/Transactions
+  - Show: all credits/debits
+  - Dates, amounts, sources (refund, purchase, etc.)
+
+- [ ] Withdraw Funds (Optional)
+  - Button to request withdrawal
+  - Enter bank details
+  - Track withdrawal status
+
+
+## 9. PHOTOGRAPHER DASHBOARD
+**Location:** /pages/PhotographerDashboard or /dashboard/photographer
+
+### Features:
+- [ ] Earnings Summary
+  - API: GET /api/payments/earnings-summary/:photographerId
+  - Show: total earned, current balance, recent sales
+  - Display: top selling photo, average price
+
+- [ ] Upload/Manage Photos
+  - API: POST /api/media (create)
+  - Form: title, description, price, category, file upload
+  - Show uploaded photos list
+
+- [ ] Set Price Per Photo
+  - API: PUT /api/media/:id/price
+  - Body: {price, photographerId}
+  - Show: current price, ability to edit
+  - Confirmation before saving
+
+- [ ] View Sales
+  - API: GET /api/payments/earnings/:photographerId
+  - Table: photo name, buyer, date, amount
+  - Export sales report (CSV)
+
+- [ ] Edit Media Details
+  - API: PUT /api/media/:id
+  - Update: title, description, category
+  - Delete photo: DELETE /api/media/:id
+
+
+## 10. ADMIN DASHBOARD
+**Location:** /pages/AdminDashboard or /admin/dashboard
+
+### Features:
+- [ ] Revenue Dashboard
+  - API: GET /api/payments/admin/dashboard
+  - Show: total revenue, total sales, revenue breakdown
+  - Charts: sales by month, top photos
+
+- [ ] All Payments
+  - Display: all completed payments
+  - Show: buyer, photo, amount, date
+  - Filter: by date, photographer, payment method
+
+- [ ] All Receipts
+  - API: GET /api/payments/admin/receipts
+  - View all user receipts
+  - Search/filter functionality
+
+- [ ] Refund Management
+  - API: GET /api/payments/admin/refunds
+  - Show: pending refunds, approved, rejected
+  - Buttons: Approve refund (POST /api/payments/refund/approve)
+  - Buttons: Reject refund (POST /api/payments/refund/reject)
+  - Admin fills rejection reason
+  - Button: Process refund (POST /api/payments/refund/process)
+  - Confirm refund processed to wallet
+
+
+## 11. USER PROFILE
+**Location:** /pages/Profile or /components/UserProfile
+
+### Features:
+- [ ] View Profile
+  - Show: username, email, profile picture, role
+  - Bio/About (if available)
+
+- [ ] Edit Profile
+  - Update: username, email, password, profile picture
+  - API: User create/update (use auth controller or create profile endpoint)
+
+- [ ] View Role-Specific Info
+  - If photographer: show earnings, sales, photos
+  - If admin: show dashboard access
+  - If user: show purchases, wallet
+
+
+## 12. PROTECTED MEDIA ACCESS
+**Location:** /pages/MediaViewer or Modal
+
+### Features:
+- [ ] Verify Purchase Before Access
+  - Check if user purchased the photo
+  - API: GET /api/payments/purchase-history/:userId
+  - Match mediaId in purchases
+
+- [ ] Generate Secure Download Link
+  - API: GET /api/media/:id/protected (requires auth)
+  - Returns signed URL with expiration
+  - Pass token in query params
+
+- [ ] Download with Token Verification
+  - Verify token hasn't expired
+  - Verify user is authenticated
+  - Serve file only if conditions met
+
+
+## 13. NAVIGATION & LAYOUT
+**Location:** /components/Navigation or /components/Header
+
+### Features:
+- [ ] Navigation Menu
+  - Home (Browse)
+  - My Purchases
+  - My Cart (with badge count)
+  - My Wallet
+  - My Refunds
+  - My Profile
+  - [FOR PHOTOGRAPHERS] Photographer Dashboard
+  - [FOR ADMIN] Admin Dashboard
+  - Logout
+
+- [ ] User Dropdown
+  - Profile link
+  - Wallet link
+  - Settings
+  - Logout
+
+
+## 14. NOTIFICATIONS & TOASTS
+**Location:** Globally accessible
+
+### Features:
+- [ ] Success Messages
+  - Item added to cart
+  - Payment successful
+  - Refund processed
+  - Price updated
+
+- [ ] Error Messages
+  - Payment failed
+  - Refund request failed
+  - Upload failed
+
+- [ ] Loading States
+  - During payment processing
+  - During file upload
+  - During data fetching
+
+
+## 15. RESPONSIVE DESIGN
+**Location:** All pages
+
+### Features:
+- [ ] Mobile Responsive
+  - Photo grid responsive
+  - Cart mobile-friendly
+  - Forms mobile-optimized
+
+- [ ] Dark/Light Mode (Optional)
+  - Theme toggle
+  - Persist theme preference
+
+
+## IMPLEMENTATION ORDER (RECOMMENDED):
+1. Setup Auth (Register/Login/Context)
+2. Browse & Search Photos
+3. Photo Details Display
+4. Shopping Cart
+5. Checkout & Payment (Mock first, then MPesa)
+6. Receipts
+7. Purchase History with Downloads
+8. User Wallet
+9. Photographer Dashboard
+10. Refund Management
+11. Admin Dashboard
+12. Protected Media Access
+13. Polish & Responsive Design
+14. Testing & Optimization
+
+
+## KEY LIBRARIES RECOMMENDED:
+- axios (API calls)
+- react-router-dom (routing)
+- zustand or Redux (state management)
+- tailwindcss or material-ui (styling)
+- jsPDF (receipt PDFs)
+- react-toastify (notifications)
+- chart.js (admin dashboard charts)
+- cloudinary-react (image display)
