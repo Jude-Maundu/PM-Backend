@@ -12,8 +12,6 @@ import {
 import {
   payWithMpesa,
   mpesaCallback,
-  getUserWallet,
-  getUserTransactions,
   buyMedia,
   getPhotographerEarnings,
   getAdminDashboard,
@@ -65,8 +63,6 @@ router.get("/media/search", async (req, res) => {
 router.post("/payments/mpesa", payWithMpesa);
 router.post("/payments/callback", mpesaCallback);
 router.post("/payments/buy", buyMedia);
-router.get("/payments/wallet/:userId", getUserWallet);
-router.get("/payments/transactions/:userId", getUserTransactions);
 router.get("/payments/earnings/:photographerId", getPhotographerEarnings);
 router.get("/payments/admin/dashboard", getAdminDashboard);
 

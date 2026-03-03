@@ -5,7 +5,7 @@ import jwt from "jsonwebtoken";
 // Register
 async function register(req, res) {
   try {
-    const { username, email, password, role } = req.body;
+    const { username, email, password, role, phoneNumber } = req.body;
 
     // Validate required fields
     if (!username || !email || !password) {
@@ -33,7 +33,8 @@ async function register(req, res) {
       email,
       password: hashedPassword,
       profilePicture,
-      role: role || "user" // <-- use provided role or default to "user"
+      phoneNumber: phoneNumber || "",
+      role: role || "user"
     });
 
     // Remove password from response
@@ -94,9 +95,8 @@ async function getUser(req, res) {
 // update user
 async function updateUser(req, res) {
   try {
-    
     const { id } = req.params;
-    const { username, email, password, role } = req.body;
+    const { username, email, password, role, phoneNumber } = req.body;
 
     // Validate required fields
     if (!username || !email) {
@@ -113,7 +113,10 @@ async function updateUser(req, res) {
       user.password = await bcrypt.hash(password, 10);
     }
     if (role) {
-      user.role = role; // <-- allow role update
+      user.role = role;
+    }
+    if (phoneNumber) {
+      user.phoneNumber = phoneNumber;
     }
 
     await user.save();
@@ -140,4 +143,44 @@ async function DeleteUser(req, res) {
   }
 }
 
-export { register, login, getAllUsers, getUser, updateUser, DeleteUser };
+// Update photographer phone number
+async function updatePhotographerPhone(req, res) {
+  try {
+    const { id } = req.params;
+    const { phoneNumber } = req.body;
+
+    // Validate phone number
+    if (!phoneNumber) {
+      return res.status(400).json({ message: "Phone number is required" });
+    }
+
+    // Validate phone number format (should be 254XXXXXXXXX)
+    const phoneRegex = /^254\d{9}$/;
+    if (!phoneRegex.test(phoneNumber)) {
+      return res.status(400).json({
+        message: "Invalid phone number format. Use 254XXXXXXXXX (e.g., 254712345678)"
+      });
+    }
+
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    // Verify user is a photographer
+    if (user.role !== "photographer") {
+      return res.status(403).json({ message: "Only photographers can set payment phone numbers" });
+    }
+
+    user.phoneNumber = phoneNumber;
+    await user.save();
+
+    const { password: pw, ...safeData } = user._doc;
+    return res.status(200).json({
+      message: "Phone number updated successfully",
+      user: safeData
+    });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+}
+
+export { register, login, getAllUsers, getUser, updateUser, DeleteUser, updatePhotographerPhone };

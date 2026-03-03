@@ -1,6 +1,5 @@
 import Refund from "../models/Refund.js";
 import Payment from "../models/Payment.js";
-import Wallet from "../models/Wallet.js";
 import Media from "../models/media.js";
 import User from "../models/users.js";
 
@@ -95,7 +94,7 @@ export async function rejectRefund(req, res) {
 }
 
 // ==============================
-// Process refund (transfer money back to wallet)
+// Process refund (Admin processing)
 // ==============================
 export async function processRefund(req, res) {
   try {
@@ -108,18 +107,6 @@ export async function processRefund(req, res) {
       return res.status(400).json({ message: "Refund is not approved" });
     }
 
-    const refundAmount = refund.refundAmount || refund.amount;
-
-    // Get buyer wallet
-    let buyerWallet = await Wallet.findOne({ user: refund.buyer._id });
-    if (!buyerWallet) {
-      buyerWallet = await Wallet.create({ user: refund.buyer._id });
-    }
-
-    // Add refund to buyer wallet
-    buyerWallet.balance += refundAmount;
-    await buyerWallet.save();
-
     // Update refund status
     refund.status = "processed";
     await refund.save();
@@ -127,7 +114,10 @@ export async function processRefund(req, res) {
     // Update payment status
     await Payment.findByIdAndUpdate(refund.payment._id, { status: "refunded" });
 
-    res.status(200).json({ message: "Refund processed", refund, buyerWallet });
+    res.status(200).json({
+      message: "Refund processed successfully",
+      refund
+    });
   } catch (error) {
     res.status(500).json({ message: "Error processing refund", error: error.message });
   }

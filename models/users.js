@@ -6,10 +6,11 @@ const userSchema = new Schema({
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   profilePicture: { type: String, default: "" },
+  phoneNumber: { type: String, default: "" }, // For photographers to receive payments
   role: {
     type: String,
-    enum: ["admin", "photographer", "user"], // allowed roles
-    default: "user" // fallback role if none provided
+    enum: ["admin", "photographer", "user"],
+    default: "user"
   }
 }, { timestamps: true });
 

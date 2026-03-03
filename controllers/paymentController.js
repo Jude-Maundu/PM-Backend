@@ -2,26 +2,89 @@ import axios from "axios";
 import Media from "../models/media.js";
 import Payment from "../models/Payment.js";
 import User from "../models/users.js";
-import Wallet from "../models/Wallet.js";
 
 const consumerKey = process.env.MPESA_CONSUMER_KEY;
-const consumerSecret = process.env.MPESA_CONSUMER_SECRET;
-const shortCode = process.env.MPESA_SHORTCODE;
+const consumerSecret = process.env.MPESA_SECRET_KEY;
+const shortCode = process.env.MPESA_SHORTCODE || "174379";
 const passkey = process.env.MPESA_PASSKEY;
-const env = process.env.MPESA_ENVIRONMENT;
-const baseUrl = process.env.BASE_URL;
+const env = process.env.MPESA_ENVIRONMENT || "sandbox";
+const baseUrl = process.env.BASE_URL || "https://pm-backend-1-0s8f.onrender.com";
+const initiatorName = process.env.MPESA_INITIATOR_NAME || "testapi";
+const initiatorPassword = process.env.MPESA_INITIATOR_PASSWORD || "";
+const adminPhoneNumber = process.env.ADMIN_PHONE_NUMBER || "254793945789";
 
 // Get Daraja access token
 async function getAccessToken() {
-  if (!consumerKey || !consumerSecret) {
-    throw new Error("MPesa credentials not configured");
-  }
-  const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString("base64");
-  const url = env === "sandbox" ? "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"
-                                : "https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials";
+  try {
+    if (!consumerKey || !consumerSecret) {
+      throw new Error("MPesa credentials not configured");
+    }
+    const auth = Buffer.from(`${consumerKey}:${consumerSecret}`).toString("base64");
+    const url = env === "sandbox"
+      ? "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"
+      : "https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials";
 
-  const response = await axios.get(url, { headers: { Authorization: `Basic ${auth}` } });
-  return response.data.access_token;
+    const response = await axios.get(url, {
+      headers: { Authorization: `Basic ${auth}` },
+      timeout: 10000
+    });
+    return response.data.access_token;
+  } catch (error) {
+    console.error("❌ Error getting access token:", error.response?.data || error.message);
+    throw error;
+  }
+}
+
+// Send money to photographer via B2C (Business to Customer)
+async function sendMoneyToPhotographer(phoneNumber, amount, reference, description) {
+  try {
+    if (!phoneNumber) {
+      console.warn("⚠️ Photographer phone number not set, skipping B2C payment");
+      return { success: false, message: "Photographer phone number not configured" };
+    }
+
+    const accessToken = await getAccessToken();
+    const timestamp = new Date().toISOString().replace(/[-T:.Z]/g, "").slice(0, 14);
+
+    const b2cPayload = {
+      InitiatorName: initiatorName,
+      SecurityCredential: initiatorPassword,
+      CommandID: "SalaryPayment", // or "BusinessPayment", "PromotionPayment"
+      Amount: Math.round(amount),
+      PartyA: shortCode,
+      PartyB: phoneNumber,
+      Remarks: description,
+      QueueTimeOutURL: `${baseUrl}/b2c-timeout`,
+      ResultURL: `${baseUrl}/b2c-callback`,
+      Occasion: reference
+    };
+
+    console.log("💸 Sending B2C payment to photographer:", {
+      phone: phoneNumber,
+      amount: Math.round(amount),
+      reference
+    });
+
+    const b2cResponse = await axios.post(
+      env === "sandbox"
+        ? "https://sandbox.safaricom.co.ke/mpesa/b2c/v1/paymentrequest"
+        : "https://api.safaricom.co.ke/mpesa/b2c/v1/paymentrequest",
+      b2cPayload,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json"
+        },
+        timeout: 30000
+      }
+    );
+
+    console.log("✅ B2C Payment initiated:", b2cResponse.data);
+    return { success: true, data: b2cResponse.data };
+  } catch (error) {
+    console.error("❌ B2C Payment error:", error.response?.data || error.message);
+    return { success: false, error: error.response?.data || error.message };
+  }
 }
 
 // Initiate STK Push
@@ -40,14 +103,20 @@ async function payWithMpesa(req, res) {
     const phoneRegex = /^254\d{9}$/;
     if (!phoneRegex.test(buyerPhone)) {
       return res.status(400).json({ 
-        message: "Invalid phone number format. Use 254XXXXXXXXX" 
+        message: "Invalid phone number format. Use 254XXXXXXXXX (e.g., 254712345678)" 
       });
     }
 
     // Check MPesa configuration
-    if (!consumerKey || !consumerSecret || !shortCode || !passkey || !env || !baseUrl) {
+    if (!consumerKey || !consumerSecret || !shortCode || !passkey) {
       return res.status(400).json({ 
-        message: "MPesa configuration incomplete. Check environment variables." 
+        message: "MPesa configuration incomplete. Check environment variables.",
+        missing: {
+          consumerKey: !consumerKey,
+          consumerSecret: !consumerSecret,
+          shortCode: !shortCode,
+          passkey: !passkey
+        }
       });
     }
 
@@ -61,12 +130,13 @@ async function payWithMpesa(req, res) {
     const buyer = await User.findById(buyerId);
     if (!buyer) return res.status(404).json({ message: "Buyer not found" });
 
-    const adminCut = media.price * 0.10;
-    const photographerCut = media.price - adminCut;
+    const adminCut = Math.round(media.price * 0.10 * 100) / 100; // 10% platform fee
+    const photographerCut = Math.round((media.price - adminCut) * 100) / 100;
 
     const accessToken = await getAccessToken();
 
-    const timestamp = new Date().toISOString().replace(/[-T:.Z]/g,"").slice(0,14);
+    // Generate timestamp in format YYYYMMDDHHmmss
+    const timestamp = new Date().toISOString().replace(/[-T:.Z]/g, "").slice(0, 14);
     const password = Buffer.from(shortCode + passkey + timestamp).toString("base64");
 
     const stkPushBody = {
@@ -74,22 +144,32 @@ async function payWithMpesa(req, res) {
       Password: password,
       Timestamp: timestamp,
       TransactionType: "CustomerPayBillOnline",
-      Amount: media.price,
-      PartyA: buyerPhone, // customer
-      PartyB: shortCode,  // business
+      Amount: Math.round(media.price),
+      PartyA: buyerPhone,
+      PartyB: shortCode,
       PhoneNumber: buyerPhone,
-      CallBackURL: `${baseUrl}/api/payments/callback`,
-      AccountReference: mediaId,
-      TransactionDesc: `Payment for media: ${media.title}`,
+      CallBackURL: `${baseUrl}/mpesa-callback`,
+      AccountReference: mediaId.substring(0, 12),
+      TransactionDesc: `Payment for: ${media.title.substring(0, 12)}`,
     };
+
+    console.log("📤 Sending STK Push:", stkPushBody);
 
     const stkResponse = await axios.post(
       env === "sandbox"
         ? "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest"
         : "https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest",
       stkPushBody,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
+      { 
+        headers: { 
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json"
+        },
+        timeout: 30000
+      }
     );
+
+    console.log("✅ STK Push Response:", stkResponse.data);
 
     const payment = await Payment.create({
       buyer: buyerId,
@@ -99,141 +179,264 @@ async function payWithMpesa(req, res) {
       photographerShare: photographerCut,
       status: "pending",
       paymentMethod: "mpesa",
-      checkoutRequestID: stkResponse.data.CheckoutRequestID
+      checkoutRequestID: stkResponse.data.CheckoutRequestID,
+      merchantRequestID: stkResponse.data.MerchantRequestID,
+      phoneNumber: buyerPhone
     });
 
-    res.status(200).json({ message: "STK Push initiated", payment, stkResponse: stkResponse.data });
+    res.status(200).json({ 
+      success: true,
+      message: "STK Push initiated. Please check your phone to complete payment.",
+      payment,
+      stkResponse: stkResponse.data 
+    });
 
   } catch (error) {
-    console.error(error.response?.data || error.message);
-    res.status(500).json({ message: "Payment initiation failed", error: error.message });
+    console.error("❌ Payment initiation error:", error.response?.data || error.message);
+    res.status(500).json({ 
+      success: false,
+      message: "Payment initiation failed", 
+      error: error.response?.data || error.message 
+    });
   }
 }
 
-// Daraja Callback URL
+// M-Pesa Callback URL
 async function mpesaCallback(req, res) {
   try {
     const callbackData = req.body;
-    const checkoutRequestID = callbackData.Body.stkCallback.CheckoutRequestID;
-    const resultCode = callbackData.Body.stkCallback.ResultCode;
+    console.log("========== MPESA CALLBACK RECEIVED ==========");
+    console.log(JSON.stringify(callbackData, null, 2));
+    console.log("=============================================");
 
-    const payment = await Payment.findOne({ checkoutRequestID }).populate("buyer").populate("media");
-    if (!payment) return res.status(404).send("Payment not found");
-
-    if (resultCode === 0) {
-      payment.status = "completed";
-      
-      // Credit photographer wallet
-      const photographer = payment.media.photographer;
-      let photographerWallet = await Wallet.findOne({ user: photographer });
-      if (!photographerWallet) {
-        photographerWallet = await Wallet.create({ user: photographer });
-      }
-      photographerWallet.balance += payment.photographerShare;
-      photographerWallet.totalEarnings += payment.photographerShare;
-      await photographerWallet.save();
-      
-      // Credit admin wallet (find admin user)
-      const admin = await User.findOne({ role: "admin" });
-      if (admin) {
-        let adminWallet = await Wallet.findOne({ user: admin._id });
-        if (!adminWallet) {
-          adminWallet = await Wallet.create({ user: admin._id });
-        }
-        adminWallet.balance += payment.adminShare;
-        adminWallet.totalEarnings += payment.adminShare;
-        await adminWallet.save();
-      }
-    } else {
-      payment.status = "failed";
+    if (!callbackData.Body || !callbackData.Body.stkCallback) {
+      return res.status(400).json({ ResultCode: 1, ResultDesc: "Invalid callback data" });
     }
 
+    const { CheckoutRequestID, ResultCode, ResultDesc, CallbackMetadata } = callbackData.Body.stkCallback;
+
+    const payment = await Payment.findOne({ checkoutRequestID: CheckoutRequestID })
+      .populate("buyer")
+      .populate({
+        path: "media",
+        populate: { path: "photographer" }
+      });
+
+    if (!payment) {
+      console.error("❌ Payment not found for CheckoutRequestID:", CheckoutRequestID);
+      return res.status(404).json({ ResultCode: 1, ResultDesc: "Payment not found" });
+    }
+
+    console.log(`💰 Payment found: ${payment._id}, Current status: ${payment.status}`);
+
+    if (ResultCode === 0) {
+      // Payment successful - extract M-Pesa receipt number from metadata
+      let mpesaReceiptNumber = "";
+      if (CallbackMetadata && CallbackMetadata.Item) {
+        const receiptItem = CallbackMetadata.Item.find(item => item.Name === "MpesaReceiptNumber");
+        if (receiptItem) {
+          mpesaReceiptNumber = receiptItem.Value;
+        }
+      }
+
+      payment.status = "completed";
+      payment.mpesaReceiptNumber = mpesaReceiptNumber;
+      payment.transactionDate = new Date();
+
+      // Increment media downloads
+      await Media.findByIdAndUpdate(payment.media._id, {
+        $inc: { downloads: 1 }
+      });
+
+      console.log(`✅ Payment completed. Receipt: ${mpesaReceiptNumber}`);
+
+      // Send money to photographer
+      if (payment.media && payment.media.photographer && payment.photographerShare > 0) {
+        const photographerPhoneNumber = payment.media.photographer.phoneNumber;
+        const photographerName = payment.media.photographer.username;
+
+        if (photographerPhoneNumber) {
+          console.log(`📱 Sending ${payment.photographerShare} KES to photographer ${photographerName}`);
+          const b2cResult = await sendMoneyToPhotographer(
+            photographerPhoneNumber,
+            payment.photographerShare,
+            payment._id.toString(),
+            `Payment for: ${payment.media.title}`
+          );
+
+          if (b2cResult.success) {
+            console.log(`✅ B2C payment sent to photographer`);
+          } else {
+            console.warn(`⚠️ Failed to send B2C payment to photographer: ${b2cResult.error}`);
+          }
+        } else {
+          console.warn(`⚠️ Photographer ${photographerName} has no phone number set`);
+        }
+      }
+
+      // Send money to admin
+      if (payment.adminShare > 0 && adminPhoneNumber) {
+        console.log(`💼 Sending ${payment.adminShare} KES to admin account`);
+        const adminB2cResult = await sendMoneyToPhotographer(
+          adminPhoneNumber,
+          payment.adminShare,
+          `ADMIN-${payment._id.toString()}`,
+          `Admin commission: ${payment.media.title}`
+        );
+
+        if (adminB2cResult.success) {
+          console.log(`✅ B2C admin payment sent to ${adminPhoneNumber}`);
+        } else {
+          console.warn(`⚠️ Failed to send B2C admin payment: ${adminB2cResult.error}`);
+        }
+      }
+    } else {
+      // Payment failed
+      payment.status = "failed";
+      console.log(`❌ Payment failed: ${ResultDesc}`);
+    }
+
+    payment.callbackData = callbackData;
     await payment.save();
-    res.status(200).send("Callback received");
+
+    // M-Pesa expects this exact response
+    res.status(200).json({
+      ResultCode: 0,
+      ResultDesc: "Success"
+    });
 
   } catch (error) {
-    console.error(error);
-    res.status(500).send("Callback error");
+    console.error("❌ Callback error:", error);
+    res.status(500).json({
+      ResultCode: 1,
+      ResultDesc: "Internal server error"
+    });
   }
 }
 
-// ==============================
+// Mock payment for testing (no M-Pesa)
+async function buyMedia(req, res) {
+  try {
+    const { mediaId, buyerId } = req.body;
+
+    if (!mediaId || !buyerId) {
+      return res.status(400).json({ message: "mediaId and buyerId are required" });
+    }
+
+    const media = await Media.findById(mediaId).populate("photographer");
+    if (!media) return res.status(404).json({ message: "Media not found" });
+
+    const buyer = await User.findById(buyerId);
+    if (!buyer) return res.status(404).json({ message: "Buyer not found" });
+
+    const adminCut = Math.round(media.price * 0.10 * 100) / 100;
+    const photographerCut = Math.round((media.price - adminCut) * 100) / 100;
+
+    // Create payment record
+    const payment = await Payment.create({
+      buyer: buyerId,
+      media: mediaId,
+      amount: media.price,
+      adminShare: adminCut,
+      photographerShare: photographerCut,
+      status: "completed",
+      paymentMethod: "mock"
+    });
+
+    // Increment downloads
+    await Media.findByIdAndUpdate(mediaId, { $inc: { downloads: 1 } });
+
+    // Send money to photographer
+    if (media.photographer && photographerCut > 0) {
+      const photographerPhoneNumber = media.photographer.phoneNumber;
+      const photographerName = media.photographer.username;
+
+      if (photographerPhoneNumber) {
+        console.log(`📱 [MOCK] Sending ${photographerCut} KES to photographer ${photographerName}`);
+        const b2cResult = await sendMoneyToPhotographer(
+          photographerPhoneNumber,
+          photographerCut,
+          payment._id.toString(),
+          `Payment for: ${media.title}`
+        );
+
+        if (b2cResult.success) {
+          console.log(`✅ [MOCK] B2C payment sent to photographer`);
+        } else {
+          console.warn(`⚠️ [MOCK] Failed to send B2C payment to photographer: ${b2cResult.error}`);
+        }
+      } else {
+        console.warn(`⚠️ [MOCK] Photographer ${photographerName} has no phone number set`);
+      }
+    }
+
+    // Send money to admin
+    if (adminCut > 0 && adminPhoneNumber) {
+      console.log(`💼 [MOCK] Sending ${adminCut} KES to admin account`);
+      const adminB2cResult = await sendMoneyToPhotographer(
+        adminPhoneNumber,
+        adminCut,
+        `ADMIN-${payment._id.toString()}`,
+        `Admin commission: ${media.title}`
+      );
+
+      if (adminB2cResult.success) {
+        console.log(`✅ [MOCK] B2C admin payment sent to ${adminPhoneNumber}`);
+      } else {
+        console.warn(`⚠️ [MOCK] Failed to send B2C admin payment: ${adminB2cResult.error}`);
+      }
+    }
+
+    res.status(201).json({
+      success: true,
+      message: "Purchase successful (mock)",
+      payment,
+      photographerEarned: photographerCut,
+      adminEarned: adminCut
+    });
+  } catch (error) {
+    console.error("❌ Mock payment error:", error);
+    res.status(500).json({ message: "Payment failed", error: error.message });
+  }
+}
+
 // Get photographer earnings
-// ==============================
 async function getPhotographerEarnings(req, res) {
   try {
     const { photographerId } = req.params;
     
-    // Get photographer's wallet
-    const wallet = await Wallet.findOne({ user: photographerId });
-    if (!wallet) {
-      return res.status(404).json({ message: "Wallet not found" });
-    }
+    const mediaItems = await Media.find({ photographer: photographerId }).select("_id");
+    const mediaIds = mediaItems.map(m => m._id);
     
-    // Get all sales of this photographer's media
     const sales = await Payment.find({ 
-      media: { $in: await Media.find({ photographer: photographerId }).select("_id") },
+      media: { $in: mediaIds },
       status: "completed"
     })
     .populate("media", "title price")
     .populate("buyer", "username email")
     .sort({ createdAt: -1 });
     
+    const totalEarned = sales.reduce((sum, s) => sum + s.photographerShare, 0);
+    
     res.status(200).json({
-      wallet,
       sales,
-      totalSales: sales.length
+      totalSales: sales.length,
+      totalEarned
     });
   } catch (error) {
+    console.error("Error fetching earnings:", error);
     res.status(500).json({ message: "Error fetching earnings", error: error.message });
   }
 }
 
-// ==============================
-// Get admin dashboard (all payments)
-// ==============================
-async function getAdminDashboard(req, res) {
-  try {
-    const allPayments = await Payment.find({ status: "completed" })
-      .populate("buyer", "username email")
-      .populate("media", "title price photographer")
-      .populate("media.photographer", "username email")
-      .sort({ createdAt: -1 });
-    
-    const adminWallet = await Wallet.findOne({ user: req.body.adminId });
-    
-    const totalRevenue = allPayments.reduce((sum, p) => sum + p.adminShare, 0);
-    
-    res.status(200).json({
-      adminWallet,
-      allPayments,
-      totalRevenue,
-      totalSales: allPayments.length
-    });
-  } catch (error) {
-    res.status(500).json({ message: "Error fetching admin dashboard", error: error.message });
-  }
-}
-
-export { payWithMpesa, mpesaCallback, getUserWallet, getUserTransactions, buyMedia, getPhotographerEarnings, getAdminDashboard, getPhotographerEarningsSummary, getPurchaseHistory };
-
-// ==============================
 // Get photographer earnings summary
-// ==============================
 async function getPhotographerEarningsSummary(req, res) {
   try {
     const { photographerId } = req.params;
 
-    const wallet = await Wallet.findOne({ user: photographerId });
-    if (!wallet) {
-      return res.status(404).json({ message: "Wallet not found" });
-    }
-
-    // Get all media by photographer
     const mediaItems = await Media.find({ photographer: photographerId });
     const mediaIds = mediaItems.map((m) => m._id);
 
-    // Get all completed sales
     const sales = await Payment.find({
       media: { $in: mediaIds },
       status: "completed",
@@ -242,30 +445,37 @@ async function getPhotographerEarningsSummary(req, res) {
       .populate("buyer", "username email")
       .sort({ createdAt: -1 });
 
-    // Calculate summary
     const totalEarned = sales.reduce((sum, s) => sum + s.photographerShare, 0);
     const soldCount = sales.length;
-    const topSellingMedia = mediaItems.sort((a, b) => {
-      const aCount = sales.filter((s) => s.media._id.toString() === a._id.toString()).length;
-      const bCount = sales.filter((s) => s.media._id.toString() === b._id.toString()).length;
-      return bCount - aCount;
-    })[0];
+    const averagePrice = soldCount > 0 ? Math.round(totalEarned / soldCount) : 0;
+    
+    // Find top selling media
+    let topSellingMedia = null;
+    if (mediaItems.length > 0) {
+      const salesCount = {};
+      sales.forEach(s => {
+        const mediaId = s.media._id.toString();
+        salesCount[mediaId] = (salesCount[mediaId] || 0) + 1;
+      });
+      
+      const topMediaId = Object.keys(salesCount).sort((a, b) => salesCount[b] - salesCount[a])[0];
+      topSellingMedia = mediaItems.find(m => m._id.toString() === topMediaId) || mediaItems[0];
+    }
 
     res.status(200).json({
-      wallet,
       earnings: {
         totalEarned,
-        currentBalance: wallet.balance,
-        totalWithdrawn: wallet.totalWithdrawn,
+        currentBalance: totalEarned, // In a real system, you'd subtract withdrawals
       },
       sales: {
         totalSales: soldCount,
-        averagePrice: soldCount > 0 ? totalEarned / soldCount : 0,
+        averagePrice,
         topSellingPhoto: topSellingMedia,
       },
       recentSales: sales.slice(0, 10),
     });
   } catch (error) {
+    console.error("Error fetching earnings summary:", error);
     res.status(500).json({
       message: "Error fetching earnings summary",
       error: error.message,
@@ -273,9 +483,7 @@ async function getPhotographerEarningsSummary(req, res) {
   }
 }
 
-// ==============================
-// Get user purchase history with receipts
-// ==============================
+// Get user purchase history
 async function getPurchaseHistory(req, res) {
   try {
     const { userId } = req.params;
@@ -290,12 +498,13 @@ async function getPurchaseHistory(req, res) {
       amount: payment.amount,
       media: payment.media,
       date: payment.createdAt,
-      downloadUrl: generateSignedUrl(payment.media.fileUrl),
+      receiptId: payment.receiptId || payment._id,
       status: payment.status,
     }));
 
     res.status(200).json(purchaseHistory);
   } catch (error) {
+    console.error("Error fetching purchase history:", error);
     res.status(500).json({
       message: "Error fetching purchase history",
       error: error.message,
@@ -303,109 +512,40 @@ async function getPurchaseHistory(req, res) {
   }
 }
 
-// ==============================
-// Generate secure signed URL for download
-// ==============================
-function generateSignedUrl(fileUrl, expiresIn = 3600) {
-  // Append timestamp and expiration to URL
-  const expiryTime = Date.now() + expiresIn * 1000;
-  const token = Buffer.from(fileUrl + expiryTime).toString("base64");
-  return `${fileUrl}?token=${token}&expires=${expiryTime}`;
-}
-
-// ==============================
-// Get user wallet
-// ==============================
-async function getUserWallet(req, res) {
+// Get admin dashboard
+async function getAdminDashboard(req, res) {
   try {
-    const { userId } = req.params;
-    let wallet = await Wallet.findOne({ user: userId }).populate("user", "username email");
-    
-    if (!wallet) {
-      wallet = await Wallet.create({ user: userId });
-      await wallet.populate("user", "username email");
-    }
-    
-    res.status(200).json(wallet);
-  } catch (error) {
-    res.status(500).json({ message: "Error fetching wallet", error: error.message });
-  }
-}
-
-// ==============================
-// Get user transactions/purchases
-// ==============================
-async function getUserTransactions(req, res) {
-  try {
-    const { userId } = req.params;
-    const transactions = await Payment.find({ buyer: userId })
-      .populate("media", "title price")
+    const allPayments = await Payment.find({ status: "completed" })
       .populate("buyer", "username email")
+      .populate("media", "title price photographer")
+      .populate({
+        path: 'media',
+        populate: { path: 'photographer', select: 'username email' }
+      })
       .sort({ createdAt: -1 });
     
-    res.status(200).json(transactions);
+    const totalRevenue = allPayments.reduce((sum, p) => sum + (p.adminShare || 0), 0);
+    const totalSales = allPayments.length;
+    const totalPhotographerEarnings = allPayments.reduce((sum, p) => sum + (p.photographerShare || 0), 0);
+    
+    res.status(200).json({
+      allPayments,
+      totalRevenue,
+      totalSales,
+      totalPhotographerEarnings
+    });
   } catch (error) {
-    res.status(500).json({ message: "Error fetching transactions", error: error.message });
+    console.error("Error fetching admin dashboard:", error);
+    res.status(500).json({ message: "Error fetching admin dashboard", error: error.message });
   }
 }
 
-// ==============================
-// Buy media directly (mock payment for testing)
-// ==============================
-async function buyMedia(req, res) {
-  try {
-    const { mediaId, buyerId } = req.body;
-    
-    const media = await Media.findById(mediaId);
-    if (!media) return res.status(404).json({ message: "Media not found" });
-    
-    const buyer = await User.findById(buyerId);
-    if (!buyer) return res.status(404).json({ message: "Buyer not found" });
-    
-    const adminCut = media.price * 0.10;
-    const photographerCut = media.price - adminCut;
-    
-    // Create payment record
-    const payment = await Payment.create({
-      buyer: buyerId,
-      media: mediaId,
-      amount: media.price,
-      adminShare: adminCut,
-      photographerShare: photographerCut,
-      status: "completed",
-      paymentMethod: "mock"
-    });
-    
-    // Credit photographer wallet
-    const photographer = media.photographer;
-    let photographerWallet = await Wallet.findOne({ user: photographer });
-    if (!photographerWallet) {
-      photographerWallet = await Wallet.create({ user: photographer });
-    }
-    photographerWallet.balance += photographerCut;
-    photographerWallet.totalEarnings += photographerCut;
-    await photographerWallet.save();
-    
-    // Credit admin wallet
-    const admin = await User.findOne({ role: "admin" });
-    if (admin) {
-      let adminWallet = await Wallet.findOne({ user: admin._id });
-      if (!adminWallet) {
-        adminWallet = await Wallet.create({ user: admin._id });
-      }
-      adminWallet.balance += adminCut;
-      adminWallet.totalEarnings += adminCut;
-      await adminWallet.save();
-    }
-    
-    res.status(201).json({ 
-      message: "Payment successful", 
-      payment,
-      photographerEarned: photographerCut,
-      adminEarned: adminCut
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Payment failed", error: error.message });
-  }
-}
+export { 
+  payWithMpesa, 
+  mpesaCallback, 
+  buyMedia, 
+  getPhotographerEarnings, 
+  getAdminDashboard, 
+  getPhotographerEarningsSummary, 
+  getPurchaseHistory 
+};
