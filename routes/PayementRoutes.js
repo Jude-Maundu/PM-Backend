@@ -40,6 +40,7 @@ const router = express.Router();
 // PAYMENT ENDPOINTS
 // ============================================
 router.post("/mpesa", payWithMpesa);
+router.post("/mpesa/topup", payWithMpesa);
 router.post("/callback", mpesaCallback);
 router.post("/buy", buyMedia);
 router.get("/purchase-history/:userId", getPurchaseHistory);

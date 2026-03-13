@@ -1,4 +1,7 @@
 import Media from "../models/media.js";
+import Album from "../models/album.js";
+import EventAccess from "../models/EventAccess.js";
+import Payment from "../models/Payment.js";
 
 // ==============================
 // Get all media
@@ -33,27 +36,172 @@ export async function getOneMedia(req, res) {
 }
 
 // ==============================
-// Get media with download protection (requires auth)
+// Create event access token (photographer shares to a buyer)
+// ==============================
+export async function createEventAccess(req, res) {
+  try {
+    const { albumId } = req.params;
+    const { photographerId, buyerId, expiresInMinutes = 60 } = req.body;
+
+    if (!albumId || !photographerId || !buyerId) {
+      return res.status(400).json({ message: "albumId, photographerId, buyerId are required" });
+    }
+
+    const album = await Album.findById(albumId);
+    if (!album) return res.status(404).json({ message: "Album (event) not found" });
+
+    if (album.photographer.toString() !== photographerId) {
+      return res.status(403).json({ message: "Unauthorized: you don't own this album" });
+    }
+
+    const token = Buffer.from(`${albumId}:${buyerId}:${Date.now()}`).toString("base64");
+    const expiresAt = new Date(Date.now() + Number(expiresInMinutes) * 60000);
+
+    const eventAccess = await EventAccess.create({
+      album: albumId,
+      photographer: photographerId,
+      buyer: buyerId,
+      token,
+      expiresAt,
+      isActive: true
+    });
+
+    const accessLink = `${process.env.FRONTEND_URL || "http://localhost:3000"}/events/${albumId}/access/${token}`;
+
+    res.status(201).json({
+      message: "Event access token created",
+      eventAccess,
+      accessLink
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+// ==============================
+// Get album media via event token
+// ==============================
+export async function getEventMediaByToken(req, res) {
+  try {
+    const { albumId, token } = req.params;
+
+    if (!albumId || !token) {
+      return res.status(400).json({ message: "albumId and token are required" });
+    }
+
+    const accessRecord = await EventAccess.findOne({
+      album: albumId,
+      token,
+      isActive: true,
+      expiresAt: { $gt: new Date() }
+    }).populate("buyer photographer");
+
+    if (!accessRecord) {
+      return res.status(403).json({ message: "Invalid or expired event access token" });
+    }
+
+    const media = await Media.find({ album: albumId })
+      .populate("photographer", "username email");
+
+    res.status(200).json({
+      album: albumId,
+      buyer: accessRecord.buyer,
+      photographer: accessRecord.photographer,
+      media,
+      canPurchase: true
+    });
+
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+// ==============================
+// Get media with download protection (requires buyer has completed purchase)
 // ==============================
 export async function getProtectedMedia(req, res) {
   try {
     const { id } = req.params;
-    const { userId } = req.body; // From auth middleware
+    const { userId } = req.body; // From auth middleware or request
+
+    if (!userId) {
+      return res.status(401).json({ message: "User id required for protected media" });
+    }
 
     const media = await Media.findById(id)
       .populate("photographer", "username email");
 
     if (!media) return res.status(404).json({ message: "Media not found" });
 
-    // Generate secure download URL
-    const downloadToken = Buffer.from(id + userId + Date.now()).toString("base64");
-    const signedUrl = `/api/media/${id}/download?token=${downloadToken}&user=${userId}`;
+    const payment = await Payment.findOne({
+      media: id,
+      buyer: userId,
+      status: "completed"
+    });
+
+    if (!payment) {
+      return res.status(403).json({
+        message: "Download not permitted. You need to purchase this media first."
+      });
+    }
+
+    // Generate secure download URL (short-lived)
+    const downloadToken = Buffer.from(`${id}:${userId}:${Date.now()}`).toString("base64");
+    const signedUrl = `/api/media/${id}/download?token=${encodeURIComponent(downloadToken)}&user=${userId}`;
 
     res.status(200).json({
       media,
       downloadUrl: signedUrl,
       canDownload: true,
     });
+
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+// ==============================
+// Allow downloading after token check (secure link)
+// ==============================
+export async function downloadMedia(req, res) {
+  try {
+    const { id } = req.params;
+    const { token, user: userId } = req.query;
+
+    if (!token || !userId) {
+      return res.status(400).json({ message: "Download token and user required" });
+    }
+
+    // Token is base64 encoded with id:userId:timestamp
+    const decoded = Buffer.from(token, "base64").toString("utf-8");
+    const [mediaId, tokenUserId, timestamp] = decoded.split(":");
+
+    if (mediaId !== id || tokenUserId !== userId) {
+      return res.status(403).json({ message: "Invalid download token" });
+    }
+
+    const isExpired = (Date.now() - Number(timestamp)) > (10 * 60 * 1000); // 10 minutes
+    if (isExpired) {
+      return res.status(403).json({ message: "Download token has expired" });
+    }
+
+    const media = await Media.findById(id);
+    if (!media) return res.status(404).json({ message: "Media not found" });
+
+    // Ensure buyer has paid
+    const payment = await Payment.findOne({
+      media: id,
+      buyer: userId,
+      status: "completed"
+    });
+
+    if (!payment) {
+      return res.status(403).json({ message: "You need to purchase this media first" });
+    }
+
+    // For now redirect to file URL (Cloudinary) or send file URL
+    return res.redirect(media.fileUrl);
 
   } catch (error) {
     res.status(500).json({ message: error.message });

@@ -2,6 +2,7 @@ import axios from "axios";
 import Media from "../models/media.js";
 import Payment from "../models/Payment.js";
 import User from "../models/users.js";
+import Wallet from "../models/Wallet.js";
 
 const consumerKey = process.env.MPESA_CONSUMER_KEY;
 const consumerSecret = process.env.MPESA_SECRET_KEY;
@@ -90,26 +91,31 @@ async function sendMoneyToPhotographer(phoneNumber, amount, reference, descripti
 // Initiate STK Push
 async function payWithMpesa(req, res) {
   try {
-    const { mediaId, buyerPhone, buyerId } = req.body;
+    const { mediaId, buyerPhone, buyerId, amount, walletTopup } = req.body;
+    const topup = walletTopup === true || walletTopup === "true";
 
     // Validate required fields
-    if (!mediaId || !buyerPhone || !buyerId) {
-      return res.status(400).json({ 
-        message: "Missing required fields: mediaId, buyerPhone, buyerId" 
+    if (!buyerPhone || !buyerId || (!topup && !mediaId)) {
+      return res.status(400).json({
+        message: "Missing required fields: buyerPhone, buyerId, and mediaId for purchase or walletTopup flag"
       });
+    }
+
+    if (topup && (!amount || amount <= 0)) {
+      return res.status(400).json({ message: "Amount must be greater than 0 for wallet topup" });
     }
 
     // Validate phone number format (should be 254XXXXXXXXX)
     const phoneRegex = /^254\d{9}$/;
     if (!phoneRegex.test(buyerPhone)) {
-      return res.status(400).json({ 
-        message: "Invalid phone number format. Use 254XXXXXXXXX (e.g., 254712345678)" 
+      return res.status(400).json({
+        message: "Invalid phone number format. Use 254XXXXXXXXX (e.g., 254712345678)"
       });
     }
 
     // Check MPesa configuration
     if (!consumerKey || !consumerSecret || !shortCode || !passkey) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         message: "MPesa configuration incomplete. Check environment variables.",
         missing: {
           consumerKey: !consumerKey,
@@ -120,18 +126,32 @@ async function payWithMpesa(req, res) {
       });
     }
 
-    const media = await Media.findById(mediaId);
-    if (!media) return res.status(404).json({ message: "Media not found" });
-
-    if (!media.price || media.price <= 0) {
-      return res.status(400).json({ message: "Media price is not set or invalid" });
-    }
-
     const buyer = await User.findById(buyerId);
     if (!buyer) return res.status(404).json({ message: "Buyer not found" });
 
-    const adminCut = Math.round(media.price * 0.10 * 100) / 100; // 10% platform fee
-    const photographerCut = Math.round((media.price - adminCut) * 100) / 100;
+    let media = null;
+    let paymentAmount = 0;
+    let adminCut = 0;
+    let photographerCut = 0;
+    let accountReference = "WALLET_TOPUP";
+    let transactionDesc = "Wallet topup";
+
+    if (topup) {
+      paymentAmount = Number(amount);
+    } else {
+      media = await Media.findById(mediaId);
+      if (!media) return res.status(404).json({ message: "Media not found" });
+
+      if (!media.price || media.price <= 0) {
+        return res.status(400).json({ message: "Media price is not set or invalid" });
+      }
+
+      paymentAmount = media.price;
+      adminCut = Math.round(media.price * 0.10 * 100) / 100; // 10% platform fee
+      photographerCut = Math.round((media.price - adminCut) * 100) / 100;
+      accountReference = mediaId.substring(0, 12);
+      transactionDesc = `Payment for: ${media.title.substring(0, 12)}`;
+    }
 
     const accessToken = await getAccessToken();
 
@@ -144,13 +164,13 @@ async function payWithMpesa(req, res) {
       Password: password,
       Timestamp: timestamp,
       TransactionType: "CustomerPayBillOnline",
-      Amount: Math.round(media.price),
+      Amount: Math.round(paymentAmount),
       PartyA: buyerPhone,
       PartyB: shortCode,
       PhoneNumber: buyerPhone,
-      CallBackURL: `${baseUrl}/mpesa-callback`,
-      AccountReference: mediaId.substring(0, 12),
-      TransactionDesc: `Payment for: ${media.title.substring(0, 12)}`,
+      CallBackURL: `${baseUrl}/api/payments/callback`,
+      AccountReference: accountReference,
+      TransactionDesc: transactionDesc
     };
 
     console.log("📤 Sending STK Push:", stkPushBody);
@@ -160,8 +180,8 @@ async function payWithMpesa(req, res) {
         ? "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest"
         : "https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest",
       stkPushBody,
-      { 
-        headers: { 
+      {
+        headers: {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json"
         },
@@ -173,8 +193,8 @@ async function payWithMpesa(req, res) {
 
     const payment = await Payment.create({
       buyer: buyerId,
-      media: mediaId,
-      amount: media.price,
+      media: topup ? null : mediaId,
+      amount: paymentAmount,
       adminShare: adminCut,
       photographerShare: photographerCut,
       status: "pending",
@@ -184,19 +204,18 @@ async function payWithMpesa(req, res) {
       phoneNumber: buyerPhone
     });
 
-    res.status(200).json({ 
+    res.status(200).json({
       success: true,
       message: "STK Push initiated. Please check your phone to complete payment.",
       payment,
-      stkResponse: stkResponse.data 
+      stkResponse: stkResponse.data
     });
-
   } catch (error) {
     console.error("❌ Payment initiation error:", error.response?.data || error.message);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: "Payment initiation failed", 
-      error: error.response?.data || error.message 
+      message: "Payment initiation failed",
+      error: error.response?.data || error.message
     });
   }
 }
@@ -243,52 +262,64 @@ async function mpesaCallback(req, res) {
       payment.mpesaReceiptNumber = mpesaReceiptNumber;
       payment.transactionDate = new Date();
 
-      // Increment media downloads
-      await Media.findByIdAndUpdate(payment.media._id, {
-        $inc: { downloads: 1 }
-      });
+      if (payment.media) {
+        // Increment media downloads
+        await Media.findByIdAndUpdate(payment.media._id, {
+          $inc: { downloads: 1 }
+        });
 
-      console.log(`✅ Payment completed. Receipt: ${mpesaReceiptNumber}`);
+        console.log(`✅ Media payment completed. Receipt: ${mpesaReceiptNumber}`);
 
-      // Send money to photographer
-      if (payment.media && payment.media.photographer && payment.photographerShare > 0) {
-        const photographerPhoneNumber = payment.media.photographer.phoneNumber;
-        const photographerName = payment.media.photographer.username;
+        // Send money to photographer
+        if (payment.media.photographer && payment.photographerShare > 0) {
+          const photographerPhoneNumber = payment.media.photographer.phoneNumber;
+          const photographerName = payment.media.photographer.username;
 
-        if (photographerPhoneNumber) {
-          console.log(`📱 Sending ${payment.photographerShare} KES to photographer ${photographerName}`);
-          const b2cResult = await sendMoneyToPhotographer(
-            photographerPhoneNumber,
-            payment.photographerShare,
-            payment._id.toString(),
-            `Payment for: ${payment.media.title}`
+          if (photographerPhoneNumber) {
+            console.log(`📱 Sending ${payment.photographerShare} KES to photographer ${photographerName}`);
+            const b2cResult = await sendMoneyToPhotographer(
+              photographerPhoneNumber,
+              payment.photographerShare,
+              payment._id.toString(),
+              `Payment for: ${payment.media.title}`
+            );
+
+            if (b2cResult.success) {
+              console.log(`✅ B2C payment sent to photographer`);
+            } else {
+              console.warn(`⚠️ Failed to send B2C payment to photographer: ${b2cResult.error}`);
+            }
+          } else {
+            console.warn(`⚠️ Photographer ${photographerName} has no phone number set`);
+          }
+        }
+
+        // Send money to admin
+        if (payment.adminShare > 0 && adminPhoneNumber) {
+          console.log(`💼 Sending ${payment.adminShare} KES to admin account`);
+          const adminB2cResult = await sendMoneyToPhotographer(
+            adminPhoneNumber,
+            payment.adminShare,
+            `ADMIN-${payment._id.toString()}`,
+            `Admin commission: ${payment.media.title}`
           );
 
-          if (b2cResult.success) {
-            console.log(`✅ B2C payment sent to photographer`);
+          if (adminB2cResult.success) {
+            console.log(`✅ B2C admin payment sent to ${adminPhoneNumber}`);
           } else {
-            console.warn(`⚠️ Failed to send B2C payment to photographer: ${b2cResult.error}`);
+            console.warn(`⚠️ Failed to send B2C admin payment: ${adminB2cResult.error}`);
           }
-        } else {
-          console.warn(`⚠️ Photographer ${photographerName} has no phone number set`);
         }
-      }
-
-      // Send money to admin
-      if (payment.adminShare > 0 && adminPhoneNumber) {
-        console.log(`💼 Sending ${payment.adminShare} KES to admin account`);
-        const adminB2cResult = await sendMoneyToPhotographer(
-          adminPhoneNumber,
-          payment.adminShare,
-          `ADMIN-${payment._id.toString()}`,
-          `Admin commission: ${payment.media.title}`
-        );
-
-        if (adminB2cResult.success) {
-          console.log(`✅ B2C admin payment sent to ${adminPhoneNumber}`);
-        } else {
-          console.warn(`⚠️ Failed to send B2C admin payment: ${adminB2cResult.error}`);
+      } else {
+        // Wallet topup
+        let wallet = await Wallet.findOne({ user: payment.buyer._id || payment.buyer });
+        if (!wallet) {
+          wallet = await Wallet.create({ user: payment.buyer._id || payment.buyer, balance: 0 });
         }
+        wallet.balance += payment.amount;
+        await wallet.save();
+
+        console.log(`✅ Wallet topup completed: +KES ${payment.amount} for user ${payment.buyer._id || payment.buyer}`);
       }
     } else {
       // Payment failed
@@ -317,7 +348,7 @@ async function mpesaCallback(req, res) {
 // Mock payment for testing (no M-Pesa)
 async function buyMedia(req, res) {
   try {
-    const { mediaId, buyerId } = req.body;
+    const { mediaId, buyerId, useWallet = true } = req.body;
 
     if (!mediaId || !buyerId) {
       return res.status(400).json({ message: "mediaId and buyerId are required" });
@@ -328,6 +359,16 @@ async function buyMedia(req, res) {
 
     const buyer = await User.findById(buyerId);
     if (!buyer) return res.status(404).json({ message: "Buyer not found" });
+
+    // Wallet deduction path
+    if (useWallet) {
+      const wallet = await Wallet.findOne({ user: buyerId });
+      if (!wallet || wallet.balance < media.price) {
+        return res.status(400).json({ message: "Insufficient wallet balance" });
+      }
+      wallet.balance -= media.price;
+      await wallet.save();
+    }
 
     const adminCut = Math.round(media.price * 0.10 * 100) / 100;
     const photographerCut = Math.round((media.price - adminCut) * 100) / 100;

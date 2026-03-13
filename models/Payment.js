@@ -9,7 +9,7 @@ const paymentSchema = new mongoose.Schema({
   media: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Media",
-    required: true
+    required: false
   },
   amount: {
     type: Number,

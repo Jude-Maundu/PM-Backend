@@ -1,6 +1,7 @@
 import User from "../models/users.js";
 import Payment from "../models/Payment.js";
 import Refund from "../models/Refund.js";
+import Wallet from "../models/Wallet.js";
 
 // ==============================
 // Get wallet balance
@@ -12,35 +13,23 @@ export async function getWalletBalance(req, res) {
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    // Get completed payments for this buyer
-    const payments = await Payment.find({ 
-      buyer: userId, 
-      status: "completed" 
-    });
-
-    // Get pending or approved refunds
-    const refunds = await Refund.find({
-      buyer: userId,
-      status: { $in: ["approved", "processed"] }
-    });
-
-    // Calculate balance (total spent)
-    const totalSpent = payments.reduce((sum, p) => sum + p.amount, 0);
-    const totalRefunded = refunds.reduce((sum, r) => sum + r.amount, 0);
-    const balance = 0; // Wallets start at 0, users add money via Mpesa
+    let wallet = await Wallet.findOne({ user: userId });
+    if (!wallet) {
+      wallet = await Wallet.create({ user: userId, balance: 0 });
+    }
 
     res.status(200).json({
       userId,
-      balance,
-      totalSpent,
-      totalRefunded,
-      netBalance: balance - totalSpent + totalRefunded
+      balance: wallet.balance,
+      totalSpent: 0,
+      totalRefunded: 0,
+      netBalance: wallet.balance
     });
   } catch (error) {
     console.error("Error fetching wallet balance:", error);
-    res.status(500).json({ 
-      message: "Error fetching wallet balance", 
-      error: error.message 
+    res.status(500).json({
+      message: "Error fetching wallet balance",
+      error: error.message
     });
   }
 }
@@ -77,8 +66,8 @@ export async function getTransactions(req, res) {
         reference: p._id
       }));
     } else if (user.role === "buyer") {
-      // Get purchases for buyer
-      const payments = await Payment.find({ 
+      // Get purchases and topups for buyer
+      const payments = await Payment.find({
         buyer: userId,
         status: "completed"
       })
@@ -87,9 +76,9 @@ export async function getTransactions(req, res) {
 
       transactions = payments.map(p => ({
         id: p._id,
-        type: "purchase",
-        amount: p.amount,
-        description: `Purchase: ${p.media?.title}`,
+        type: p.media ? "purchase" : "topup",
+        amount: p.media ? p.amount * -1 : p.amount,
+        description: p.media ? `Purchase: ${p.media?.title}` : `Wallet topup via ${p.paymentMethod}`,
         date: p.createdAt,
         status: "completed",
         reference: p._id
@@ -99,40 +88,47 @@ export async function getTransactions(req, res) {
     res.status(200).json(transactions);
   } catch (error) {
     console.error("Error fetching transactions:", error);
-    res.status(500).json({ 
-      message: "Error fetching transactions", 
-      error: error.message 
+    res.status(500).json({
+      message: "Error fetching transactions",
+      error: error.message
     });
   }
 }
 
 // ==============================
-// Add funds to wallet (mock - in real system would integrate with payment gateway)
+// Add funds to wallet (manual / mock)
 // ==============================
 export async function addFundsToWallet(req, res) {
   try {
     const { userId, amount } = req.body;
 
     if (!userId || !amount || amount <= 0) {
-      return res.status(400).json({ 
-        message: "Invalid userId or amount" 
+      return res.status(400).json({
+        message: "Invalid userId or amount"
       });
     }
 
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    // In a real system, you would create a payment transaction here
+    let wallet = await Wallet.findOne({ user: userId });
+    if (!wallet) {
+      wallet = await Wallet.create({ user: userId, balance: 0 });
+    }
+
+    wallet.balance += Number(amount);
+    await wallet.save();
+
     res.status(200).json({
       message: "Funds added successfully",
       amount,
-      newBalance: amount // Mock balance
+      newBalance: wallet.balance
     });
   } catch (error) {
     console.error("Error adding funds:", error);
-    res.status(500).json({ 
-      message: "Error adding funds", 
-      error: error.message 
+    res.status(500).json({
+      message: "Error adding funds",
+      error: error.message
     });
   }
 }

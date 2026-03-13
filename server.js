@@ -28,6 +28,7 @@ console.log('===================================');
 import authRouter from "./routes/authcontroller.js";
 import mediaRouter from "./routes/MediaRoutes.js";
 import paymentRouter from "./routes/PayementRoutes.js";
+import { mpesaCallback } from "./controllers/paymentController.js";
 
 const app = express();
 
@@ -84,16 +85,7 @@ app.get("/", (req, res) => {
 
 // ==================== M-PESA ROUTES ====================
 // Callback endpoint for M-Pesa
-app.post("/mpesa-callback", (req, res) => {
-  console.log("========== MPESA CALLBACK RECEIVED ==========");
-  console.log(JSON.stringify(req.body, null, 2));
-  console.log("=============================================");
-
-  res.json({
-    ResultCode: 0,
-    ResultDesc: "Success"
-  });
-});
+app.post("/mpesa-callback", mpesaCallback);
 
 // Test token route
 app.get("/test-token", async (req, res) => {
