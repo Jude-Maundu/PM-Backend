@@ -149,7 +149,10 @@ app.use((req, res) => {
 });
 
 // ==================== DATABASE CONNECTION ====================
-const mongoURI = process.env.MONGODB_URI || 'mongodb://localhost:27017/photomarket';
+const mongoURI =
+  process.env.MONGODB_URI ||
+  process.env.MONGO_URI ||
+  'mongodb://localhost:27017/photomarket';
 
 async function dbconnection() {
   try {
