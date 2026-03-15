@@ -123,7 +123,17 @@ export async function getEventMediaByToken(req, res) {
 export async function getProtectedMedia(req, res) {
   try {
     const { id } = req.params;
-    const { userId } = req.body; // From auth middleware or request
+
+    // Determine userId from multiple sources:
+    // - JWT auth middleware (req.user.userId)
+    // - query string (for GET requests)
+    // - request body (fallback)
+    const userId =
+      req.user?.userId ||
+      req.query?.userId ||
+      req.query?.user ||
+      req.body?.userId ||
+      req.body?.user;
 
     if (!userId) {
       return res.status(401).json({ message: "User id required for protected media" });
@@ -134,16 +144,19 @@ export async function getProtectedMedia(req, res) {
 
     if (!media) return res.status(404).json({ message: "Media not found" });
 
-    const payment = await Payment.findOne({
-      media: id,
-      buyer: userId,
-      status: "completed"
-    });
-
-    if (!payment) {
-      return res.status(403).json({
-        message: "Download not permitted. You need to purchase this media first."
+    // Admins can access any media without purchase
+    if (req.user?.role !== "admin") {
+      const payment = await Payment.findOne({
+        media: id,
+        buyer: userId,
+        status: "completed"
       });
+
+      if (!payment) {
+        return res.status(403).json({
+          message: "Download not permitted. You need to purchase this media first."
+        });
+      }
     }
 
     // Generate secure download URL (short-lived)
@@ -199,6 +212,9 @@ export async function downloadMedia(req, res) {
     if (!payment) {
       return res.status(403).json({ message: "You need to purchase this media first" });
     }
+
+    // Increment download count for the media (optional)
+    await Media.findByIdAndUpdate(id, { $inc: { downloads: 1 } });
 
     // For now redirect to file URL (Cloudinary) or send file URL
     return res.redirect(media.fileUrl);

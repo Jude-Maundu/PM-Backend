@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import Settings from "../models/settings.js";
+import Payment from "../models/Payment.js";
 
 let cachedSettings = null;
 
@@ -164,6 +165,46 @@ async function setMaintenanceMode(req, res) {
   }
 }
 
+async function getPurchaseAudit(req, res) {
+  try {
+    const { buyerId, photographerId } = req.query;
+
+    const filter = { status: "completed" };
+    if (buyerId) filter.buyer = buyerId;
+    if (photographerId) filter["media.photographer"] = photographerId;
+
+    const payments = await Payment.find(filter)
+      .populate("buyer", "username email phoneNumber")
+      .populate({
+        path: "media",
+        populate: { path: "photographer", select: "username email phoneNumber" }
+      })
+      .sort({ createdAt: -1 });
+
+    const audit = payments.map((payment) => {
+      const userId = payment.buyer?._id?.toString();
+      const mediaId = payment.media?._id?.toString();
+      const downloadToken = Buffer.from(`${mediaId}:${userId}:${Date.now()}`).toString("base64");
+      const downloadUrl = `/api/media/${mediaId}/download?token=${encodeURIComponent(downloadToken)}&user=${userId}`;
+
+      return {
+        paymentId: payment._id,
+        buyer: payment.buyer,
+        media: payment.media,
+        amount: payment.amount,
+        status: payment.status,
+        createdAt: payment.createdAt,
+        downloadUrl,
+      };
+    });
+
+    res.status(200).json({ audit });
+  } catch (error) {
+    console.error("Error fetching purchase audit:", error);
+    res.status(500).json({ message: "Error fetching purchase audit", error: error.message });
+  }
+}
+
 export {
   getSettings,
   updateSettings,
@@ -172,4 +213,5 @@ export {
   sendTestEmail,
   clearCache,
   setMaintenanceMode,
+  getPurchaseAudit,
 };

@@ -303,7 +303,7 @@ The buyer completes checkout from the **cart page**. Once payment is confirmed, 
    - When payment completes, the backend records the purchase and sets `status: "completed"` on the payment.
 3. **Get a secure download URL**
    - For each purchased item, call `GET /api/media/:id/protected`.
-   - Include authenticated user info (JWT) so the backend can verify the purchase.
+   - A valid JWT is required so the backend can validate the purchase.
    - The response includes `downloadUrl` which is a short-lived, secure link.
 4. **Auto-download**
    - Once you have the `downloadUrl`, trigger a browser download:
@@ -312,6 +312,171 @@ The buyer completes checkout from the **cart page**. Once payment is confirmed, 
      ```
 
 > Note: The backend only returns `downloadUrl` if the user has a completed payment for that media.
+
+---
+
+## Private Event Link (Photographer → Buyer)
+
+Photographers can generate a private link (or QR) that allows a specific buyer to view event media and add items to their cart.
+
+### 1) Create event access link (photographer)
+
+**POST** `/api/media/album/:albumId/access`
+
+- Requires photographer auth (JWT + `role: "photographer"`).
+- Body example:
+  ```json
+  {
+    "buyerId": "<buyerUserId>",
+    "expiresInMinutes": 60
+  }
+  ```
+- Response includes `accessLink` (a URL the buyer can open), e.g.:
+  - `https://your-frontend.com/events/:albumId/access/:token`
+
+### 2) Buyer accesses media via link
+
+When the buyer opens the link, the frontend should call:
+
+**GET** `/api/media/album/:albumId/access/:token`
+
+- Response includes the list of media in the event and buyer/photographer info.
+- The buyer can then add items to cart normally and proceed to checkout.
+
+### 3) Admin oversight (optional)
+
+Admins can access any protected media downloads without needing a purchase. This allows admins to audit content and verify delivery.
+
+- Admins must call `GET /api/media/:id/protected` with a valid admin JWT.
+- The backend will bypass the purchase check for `role: "admin"`.
+
+### 4) Admin purchase audit endpoint
+
+Admins can retrieve a list of completed purchases (with buyer, media, and a download link) via:
+
+**GET** `/api/admin/audit/purchases`
+
+Optional query params:
+- `buyerId` — filter by buyer user ID
+- `photographerId` — filter by photographer user ID
+
+Response includes entries like:
+```json
+{
+  "audit": [
+    {
+      "paymentId": "...",
+      "buyer": { "_id": "...", "username": "...", "email": "..." },
+      "media": { "_id": "...", "title": "...", "fileUrl": "..." },
+      "amount": 100,
+      "status": "completed",
+      "createdAt": "...",
+      "downloadUrl": "/api/media/.../download?token=...&user=..."
+    }
+  ]
+}
+```
+
+### 5) Optional: Generate QR code (frontend)
+
+The backend returns a normal access URL. The frontend can convert that URL into a QR code using any QR library (e.g., `qrcode.react` or `qrcode-generator`).
+
+---
+
+## Frontend UI Sketch (Admin Purchase Audit)
+
+The admin can use **`GET /api/admin/audit/purchases`** to see purchased media and download links. A simple UI could include:
+
+- A table showing:
+  - Buyer name / email
+  - Photographer name / email
+  - Media title
+  - Purchase amount
+  - Purchase date
+  - A "Download" button that hits the `downloadUrl`
+- Filters:
+  - Buyer ID (or search by email)
+  - Photographer ID (or search by email)
+
+### Example React layout (pseudo)
+
+```jsx
+function AdminPurchaseAudit({ token }) {
+  const [audit, setAudit] = useState([]);
+  const [filters, setFilters] = useState({ buyerId: "", photographerId: "" });
+
+  useEffect(() => {
+    if (!token) return;
+    fetchAudit();
+  }, [token]);
+
+  const fetchAudit = async () => {
+    const params = new URLSearchParams();
+    if (filters.buyerId) params.append("buyerId", filters.buyerId);
+    if (filters.photographerId) params.append("photographerId", filters.photographerId);
+
+    const res = await fetch(
+      `${API_BASE}/admin/audit/purchases?${params.toString()}`,
+      {
+        headers: { Authorization: `Bearer ${token}` }
+      }
+    );
+
+    const data = await res.json();
+    setAudit(data.audit || []);
+  };
+
+  return (
+    <div>
+      <h2>Purchase Audit</h2>
+      <div>
+        <input
+          value={filters.buyerId}
+          onChange={(e) => setFilters((f) => ({ ...f, buyerId: e.target.value }))}
+          placeholder="Filter by buyerId"
+        />
+        <input
+          value={filters.photographerId}
+          onChange={(e) => setFilters((f) => ({ ...f, photographerId: e.target.value }))}
+          placeholder="Filter by photographerId"
+        />
+        <button onClick={fetchAudit}>Refresh</button>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Buyer</th>
+            <th>Photographer</th>
+            <th>Media</th>
+            <th>Amount</th>
+            <th>Date</th>
+            <th>Download</th>
+          </tr>
+        </thead>
+        <tbody>
+          {audit.map((row) => (
+            <tr key={row.paymentId}>
+              <td>{row.buyer?.email}</td>
+              <td>{row.media?.photographer?.email}</td>
+              <td>{row.media?.title}</td>
+              <td>{row.amount}</td>
+              <td>{new Date(row.createdAt).toLocaleString()}</td>
+              <td>
+                <a href={row.downloadUrl} target="_blank" rel="noreferrer">
+                  Download
+                </a>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+```
+
+> This UI is a sketch — adjust columns, filters, and styling as needed.
 
 ---
 

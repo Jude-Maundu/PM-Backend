@@ -13,15 +13,17 @@ import {
 } from "../controllers/MediaController.js";
  
 import { uploadPhoto } from "../middlewares/upload.js";
+import { authenticate } from "../middlewares/auth.js";
+import { requirePhotographer } from "../middlewares/photographer.js";
 
 const router = express.Router();
 
 router.get("/", getAllMedia);
 router.get("/:id", getOneMedia);
-router.get("/:id/protected", getProtectedMedia);
-router.get("/:id/download", downloadMedia);
+router.get("/:id/protected", authenticate, getProtectedMedia);
+router.get("/:id/download", authenticate, downloadMedia);
 
-router.post("/album/:albumId/access", createEventAccess);
+router.post("/album/:albumId/access", authenticate, requirePhotographer, createEventAccess);
 router.get("/album/:albumId/access/:token", getEventMediaByToken);
 
 router.post("/", uploadPhoto.single("file"), createMedia);

@@ -7,6 +7,7 @@ import {
   sendTestEmail,
   clearCache,
   setMaintenanceMode,
+  getPurchaseAudit,
 } from "../controllers/adminSettingsController.js";
 import { authenticate } from "../middlewares/auth.js";
 import { requireAdmin } from "../middlewares/admin.js";
@@ -25,5 +26,8 @@ router.put("/settings/payout", updatePayout);
 router.post("/settings/test-email", sendTestEmail);
 router.post("/clear-cache", clearCache);
 router.post("/maintenance-mode", setMaintenanceMode);
+
+// Admin audit: list completed purchases + download links
+router.get("/audit/purchases", getPurchaseAudit);
 
 export default router;
