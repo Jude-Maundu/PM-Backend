@@ -2,6 +2,7 @@ import Media from "../models/media.js";
 import Album from "../models/album.js";
 import EventAccess from "../models/EventAccess.js";
 import Payment from "../models/Payment.js";
+import User from "../models/users.js";
 
 // ==============================
 // Get all media
@@ -41,10 +42,21 @@ export async function getOneMedia(req, res) {
 export async function createEventAccess(req, res) {
   try {
     const { albumId } = req.params;
-    const { photographerId, buyerId, expiresInMinutes = 60 } = req.body;
+    const { buyerId, buyerEmail, email, buyerPhone, expiresInMinutes = 60 } = req.body;
 
-    if (!albumId || !photographerId || !buyerId) {
-      return res.status(400).json({ message: "albumId, photographerId, buyerId are required" });
+    // Photographer identity is derived from the authenticated JWT
+    const photographerId = req.user?.userId;
+
+    // Allow `email` as an alias for `buyerEmail` to simplify frontend usage
+    const resolvedBuyerEmail = buyerEmail || email;
+
+    // Validate required inputs
+    if (!albumId || !photographerId) {
+      return res.status(400).json({ message: "albumId and authenticated photographer are required" });
+    }
+
+    if (!buyerId && !resolvedBuyerEmail && !buyerPhone) {
+      return res.status(400).json({ message: "buyerId, buyerEmail (or email), or buyerPhone is required" });
     }
 
     const album = await Album.findById(albumId);
@@ -54,13 +66,29 @@ export async function createEventAccess(req, res) {
       return res.status(403).json({ message: "Unauthorized: you don't own this album" });
     }
 
-    const token = Buffer.from(`${albumId}:${buyerId}:${Date.now()}`).toString("base64");
+    // Resolve buyer by id/email/phone
+    let buyer = null;
+    if (buyerId) {
+      buyer = await User.findById(buyerId);
+    } else if (resolvedBuyerEmail) {
+      buyer = await User.findOne({ email: resolvedBuyerEmail });
+    } else if (buyerPhone) {
+      buyer = await User.findOne({ phoneNumber: buyerPhone });
+    }
+
+    if (!buyer) {
+      return res.status(404).json({ message: "Buyer not found. Provide a valid buyerId, buyerEmail (or email), or buyerPhone." });
+    }
+
+    // Use buyer email in the token (avoids needing to expose Mongo ID to the frontend)
+    const tokenSource = `${albumId}:${buyer.email}:${Date.now()}`;
+    const token = Buffer.from(tokenSource).toString("base64");
     const expiresAt = new Date(Date.now() + Number(expiresInMinutes) * 60000);
 
     const eventAccess = await EventAccess.create({
       album: albumId,
       photographer: photographerId,
-      buyer: buyerId,
+      buyer: buyer._id,
       token,
       expiresAt,
       isActive: true

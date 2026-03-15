@@ -324,13 +324,49 @@ Photographers can generate a private link (or QR) that allows a specific buyer t
 **POST** `/api/media/album/:albumId/access`
 
 - Requires photographer auth (JWT + `role: "photographer"`).
-- Body example:
+- Body example (any one of these buyer identifiers is required):
   ```json
   {
     "buyerId": "<buyerUserId>",
     "expiresInMinutes": 60
   }
   ```
+
+  ```json
+  {
+    "buyerEmail": "buyer@example.com",
+    "expiresInMinutes": 60
+  }
+  ```
+
+  ```json
+  {
+    "email": "buyer@example.com",
+    "expiresInMinutes": 60
+  }
+  ```
+
+  ```json
+  {
+    "buyerPhone": "254712345678",
+    "expiresInMinutes": 60
+  }
+  ```
+
+> Note: `email` is an alias for `buyerEmail` so you can send whichever field is easiest from your frontend.
+> The backend generates the token using the buyer's email (so the frontend does not need to share MongoDB IDs).
+>
+> Example (Axios):
+> ```js
+> const response = await axios.post(
+>   `/api/media/album/${albumId}/access`,
+>   { email: "buyer@example.com", expiresInMinutes: 60 },
+>   { headers: { Authorization: `Bearer ${token}` } }
+> );
+> console.log(response.data.accessLink);
+> ```
+>
+> Note: The backend will resolve the buyer using `buyerId`, `buyerEmail`, or `buyerPhone`. The buyer must already exist in the system (registered).
 - Response includes `accessLink` (a URL the buyer can open), e.g.:
   - `https://your-frontend.com/events/:albumId/access/:token`
 
