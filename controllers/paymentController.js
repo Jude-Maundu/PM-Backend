@@ -475,13 +475,31 @@ async function getPhotographerEarningsSummary(req, res) {
   try {
     const { photographerId } = req.params;
 
-    const mediaItems = await Media.find({ photographer: photographerId });
+    // Support the special modifier "all" for admin dashboards.
+    // When "all" is used, return earnings across all photographers.
+    const isAll = photographerId === "all";
+
+    let mediaItems = [];
+    if (!isAll) {
+      // Validate the photographerId to avoid casting errors
+      if (!photographerId || photographerId === "undefined" || photographerId === "null") {
+        return res.status(400).json({ message: "Invalid photographerId" });
+      }
+
+      mediaItems = await Media.find({ photographer: photographerId });
+    }
+
     const mediaIds = mediaItems.map((m) => m._id);
 
-    const sales = await Payment.find({
-      media: { $in: mediaIds },
+    const paymentsQuery = {
       status: "completed",
-    })
+    };
+
+    if (!isAll) {
+      paymentsQuery.media = { $in: mediaIds };
+    }
+
+    const sales = await Payment.find(paymentsQuery)
       .populate("media", "title price")
       .populate("buyer", "username email")
       .sort({ createdAt: -1 });
@@ -489,18 +507,21 @@ async function getPhotographerEarningsSummary(req, res) {
     const totalEarned = sales.reduce((sum, s) => sum + s.photographerShare, 0);
     const soldCount = sales.length;
     const averagePrice = soldCount > 0 ? Math.round(totalEarned / soldCount) : 0;
-    
+
     // Find top selling media
     let topSellingMedia = null;
-    if (mediaItems.length > 0) {
-      const salesCount = {};
-      sales.forEach(s => {
+    const salesCount = {};
+
+    sales.forEach((s) => {
+      if (s.media && s.media._id) {
         const mediaId = s.media._id.toString();
         salesCount[mediaId] = (salesCount[mediaId] || 0) + 1;
-      });
-      
+      }
+    });
+
+    if (Object.keys(salesCount).length > 0) {
       const topMediaId = Object.keys(salesCount).sort((a, b) => salesCount[b] - salesCount[a])[0];
-      topSellingMedia = mediaItems.find(m => m._id.toString() === topMediaId) || mediaItems[0];
+      topSellingMedia = sales.find((s) => s.media?._id?.toString() === topMediaId)?.media || null;
     }
 
     res.status(200).json({

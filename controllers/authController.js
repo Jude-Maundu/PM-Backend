@@ -8,8 +8,16 @@ async function register(req, res) {
     const { username, email, password, role, phoneNumber } = req.body;
 
     // Validate required fields
-    if (!username || !email || !password) {
-      return res.status(400).json({ message: "All fields are required" });
+    if (!username || !email || !password || !phoneNumber) {
+      return res.status(400).json({ message: "Username, email, password, and phoneNumber are required" });
+    }
+
+    // Validate phone number format (should be 254XXXXXXXXX)
+    const phoneRegex = /^254\d{9}$/;
+    if (!phoneRegex.test(phoneNumber)) {
+      return res.status(400).json({
+        message: "Invalid phone number format. Use 254XXXXXXXXX (e.g., 254712345678)"
+      });
     }
 
     // Check if user exists
@@ -116,6 +124,13 @@ async function updateUser(req, res) {
       user.role = role;
     }
     if (phoneNumber) {
+      // Validate phone number format (should be 254XXXXXXXXX)
+      const phoneRegex = /^254\d{9}$/;
+      if (!phoneRegex.test(phoneNumber)) {
+        return res.status(400).json({
+          message: "Invalid phone number format. Use 254XXXXXXXXX (e.g., 254712345678)"
+        });
+      }
       user.phoneNumber = phoneNumber;
     }
 

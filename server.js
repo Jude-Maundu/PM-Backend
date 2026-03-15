@@ -6,6 +6,8 @@ import axios from "axios";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from 'fs';
+import bcrypt from "bcrypt";
+import User from "./models/users.js";
 
 // Get __dirname equivalent in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -28,7 +30,10 @@ console.log('===================================');
 import authRouter from "./routes/authcontroller.js";
 import mediaRouter from "./routes/MediaRoutes.js";
 import paymentRouter from "./routes/PayementRoutes.js";
+import adminSettingsRouter from "./routes/adminSettings.js";
 import { mpesaCallback } from "./controllers/paymentController.js";
+
+console.log("✅ Admin settings router imported", !!adminSettingsRouter);
 
 const app = express();
 
@@ -70,6 +75,33 @@ uploadDirs.forEach(dir => {
     console.log(`✅ Created directory: ${dir}`);
   }
 });
+
+// ==================== INITIAL SETUP ====================
+async function ensureAdminUser() {
+  const adminEmail = "admin@gmail.com";
+  const adminUsername = "admin";
+  const adminPassword = "000000";
+
+  try {
+    const existingAdmin = await User.findOne({ email: adminEmail });
+    if (existingAdmin) {
+      console.log("✅ Admin user already exists:", adminEmail);
+      return;
+    }
+
+    const hashedPassword = await bcrypt.hash(adminPassword, 10);
+    await User.create({
+      username: adminUsername,
+      email: adminEmail,
+      password: hashedPassword,
+      role: "admin"
+    });
+
+    console.log(`✅ Created admin user: ${adminEmail} (password: ${adminPassword})`);
+  } catch (error) {
+    console.error("❌ Failed to create admin user:", error);
+  }
+}
 
 // ==================== TEST ROUTES ====================
 app.get("/api/test", (req, res) => {
@@ -129,6 +161,7 @@ app.get("/test-token", async (req, res) => {
 app.use("/api/auth", authRouter);
 app.use("/api/media", mediaRouter);
 app.use("/api/payments", paymentRouter);
+app.use("/api/admin", adminSettingsRouter);
 
 // ==================== GLOBAL ERROR HANDLER ====================
 app.use((err, req, res, next) => {
@@ -160,6 +193,9 @@ async function dbconnection() {
     await mongoose.connect(mongoURI);
 
     console.log("✅ Connected to MongoDB");
+
+    // Ensure an admin user exists (for initial setup)
+    await ensureAdminUser();
 
     // Start server AFTER successful database connection
     const PORT = process.env.PORT || 4000;
