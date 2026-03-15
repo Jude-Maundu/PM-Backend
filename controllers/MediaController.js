@@ -146,6 +146,35 @@ export async function getEventMediaByToken(req, res) {
 }
 
 // ==============================
+// Create Album (event)
+// ==============================
+export async function createAlbum(req, res) {
+  try {
+    const { name, description, coverImage } = req.body;
+    const photographerId = req.user?.userId;
+
+    if (!name) {
+      return res.status(400).json({ message: "Album name is required" });
+    }
+
+    if (!photographerId) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
+
+    const album = await Album.create({
+      name,
+      description: description || "",
+      coverImage: coverImage || "",
+      photographer: photographerId
+    });
+
+    res.status(201).json({ message: "Album created", album });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+}
+
+// ==============================
 // Get media with download protection (requires buyer has completed purchase)
 // ==============================
 export async function getProtectedMedia(req, res) {

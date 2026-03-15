@@ -23,6 +23,7 @@ router.get("/:id", getOneMedia);
 router.get("/:id/protected", authenticate, getProtectedMedia);
 router.get("/:id/download", authenticate, downloadMedia);
 
+router.post("/album", authenticate, requirePhotographer, createAlbum);
 router.post("/album/:albumId/access", authenticate, requirePhotographer, createEventAccess);
 router.get("/album/:albumId/access/:token", getEventMediaByToken);
 

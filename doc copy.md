@@ -317,13 +317,146 @@ The buyer completes checkout from the **cart page**. Once payment is confirmed, 
 
 ## Private Event Link (Photographer → Buyer)
 
-Photographers can generate a private link (or QR) that allows a specific buyer to view event media and add items to their cart.
+Photographers can create an **Album (event)** to group media together, then generate a private link (or QR) that allows a specific buyer to view the event media and add items to their cart.
+
+---
+
+## 🎛️ Album UI (Photographer)
+
+Photographers can create and manage **Albums (events)** and then generate private access links for buyers.
+
+### What this section shows
+- How to create an album (event)
+- How to generate a share link for an album
+- How to make the UI clear and visible (with concise code)
+
+---
+
+## ✅ Recommended UI flow
+1. **Create an Album** (event)
+2. **Show the photographer’s albums** in a list (optional but helpful)
+3. **Generate a share link** for the selected album (get a token)
+
+---
+
+## 1) Create an album (event)
+
+Use `POST /api/media/album` to create an album. The response includes the album `_id`, which you later use to generate a share link.
+
+### Minimal React example (create button + form)
+```jsx
+import { useState } from "react";
+import axios from "axios";
+
+export function CreateAlbum({ token, onCreated }) {
+  const [name, setName] = useState("");
+  const [coverImage, setCoverImage] = useState("");
+  const [description, setDescription] = useState("");
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleCreate = async () => {
+    setError(null);
+    setLoading(true);
+
+    try {
+      const res = await axios.post(
+        "/api/media/album",
+        { name, description, coverImage },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      onCreated(res.data.album);
+      setName("");
+      setDescription("");
+      setCoverImage("");
+    } catch (err) {
+      setError(err.response?.data?.message || err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ border: "1px solid #ccc", padding: 16, borderRadius: 8 }}>
+      <h3>Create Event (Album)</h3>
+      <input
+        placeholder="Event name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+      />
+      <input
+        placeholder="Cover image URL"
+        value={coverImage}
+        onChange={(e) => setCoverImage(e.target.value)}
+      />
+      <textarea
+        placeholder="Description"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+      />
+      <button onClick={handleCreate} disabled={loading || !name}>
+        {loading ? "Creating..." : "Create Album"}
+      </button>
+      {error && <div style={{ color: "red" }}>{error}</div>}
+    </div>
+  );
+}
+```
+
+> Use `onCreated` to add the new album to your UI list and enable share-link generation.
+
+---
+
+## 2) Generate a share link for an album
+
+Once you have an album `_id`, call `POST /api/media/album/:albumId/access`.
+
+### Example (Axios)
+```js
+const createShareLink = async (albumId, token, buyerEmail) => {
+  const res = await axios.post(
+    `/api/media/album/${albumId}/access`,
+    { email: buyerEmail, expiresInMinutes: 60 },
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  return res.data.accessLink;
+};
+```
+
+Use that URL to show a “Copy link” or “Generate QR” button in your UI.
+
+---
+
+## Quick endpoint summary (for your UI)
+- **Create album**: `POST /api/media/album`
+- **Generate share link**: `POST /api/media/album/:albumId/access`
+- **Buyer uses link**: `GET /api/media/album/:albumId/access/:token`
+
+---
+
+### 0) Create an album (event)
+
+**POST** `/api/media/album`
+
+- Requires photographer auth (JWT + `role: "photographer"`).
+- Request body example:
+  ```json
+  {
+    "name": "My Event Name",
+    "description": "Optional event description",
+    "coverImage": "https://.../cover.jpg"
+  }
+  ```
+
+- Response includes the created album, including its `_id` (use this as `albumId` when generating access links).
 
 ### 1) Create event access link (photographer)
 
 **POST** `/api/media/album/:albumId/access`
 
 - Requires photographer auth (JWT + `role: "photographer"`).
+- `albumId` must be the **Album (event) ID**, not a media item ID.
+  - If you are using media records, use the `album` field from that media.
 - Body example (any one of these buyer identifiers is required):
   ```json
   {
