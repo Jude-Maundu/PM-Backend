@@ -1,0 +1,1029 @@
+# FRONTEND INTEGRATION GUIDE - PhotoMarket API
+
+## Table of Contents
+1. [Authentication Flow](#authentication-flow)
+2. [Media Management](#media-management)
+3. [Shopping Cart](#shopping-cart)
+4. [Payment Integration](#payment-integration)
+5. [Purchase History & Downloads](#purchase-history--downloads)
+6. [Photographer Dashboard](#photographer-dashboard)
+7. [Admin Panel](#admin-panel)
+8. [Error Handling](#error-handling)
+9. [API Response Formats](#api-response-formats)
+
+---
+
+## Authentication Flow
+
+### Registration
+```javascript
+// POST /api/auth/register
+const registerUser = async (formData) => {
+  const data = new FormData();
+  data.append('username', formData.username);
+  data.append('email', formData.email);
+  data.append('password', formData.password);
+  data.append('phoneNumber', formData.phoneNumber); // Required: 254XXXXXXXXX
+  data.append('role', formData.role || 'user'); // 'user', 'photographer', or 'admin'
+  if (formData.profilePicture) {
+    data.append('profilePicture', formData.profilePicture);
+  }
+
+  try {
+    const response = await axios.post('/api/auth/register', data, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+
+    // Response: { _id, username, email, role, profilePicture, phoneNumber }
+    const { token, user } = response.data;
+
+    // Store authentication
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(user));
+
+    return { success: true, user };
+  } catch (error) {
+    return { success: false, error: error.response.data.message };
+  }
+};
+```
+
+### Login
+```javascript
+// POST /api/auth/login
+const loginUser = async (email, password) => {
+  try {
+    const response = await axios.post('/api/auth/login', { email, password });
+
+    // Response: { token, user: { _id, username, email, role, ... } }
+    const { token, user } = response.data;
+
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(user));
+
+    return { success: true, user };
+  } catch (error) {
+    return { success: false, error: error.response.data.message };
+  }
+};
+```
+
+### Authentication Setup
+```javascript
+// axios interceptor for automatic token attachment
+axios.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Logout function
+const logout = () => {
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+  window.location.href = '/login';
+};
+
+// Get current user
+const getCurrentUser = () => {
+  const userStr = localStorage.getItem('user');
+  return userStr ? JSON.parse(userStr) : null;
+};
+```
+
+---
+
+## Media Management
+
+### Browse All Media
+```javascript
+// GET /api/media
+const fetchAllMedia = async () => {
+  try {
+    const response = await axios.get('/api/media');
+    // Response: { success: true, media: [...] }
+    return response.data.media;
+  } catch (error) {
+    console.error('Failed to fetch media:', error.message);
+    return [];
+  }
+};
+```
+
+### Search Media
+```javascript
+// GET /api/media/search?title=...&mediaType=...&minPrice=...&maxPrice=...
+const searchMedia = async (searchParams) => {
+  try {
+    const params = new URLSearchParams();
+    if (searchParams.title) params.append('title', searchParams.title);
+    if (searchParams.mediaType) params.append('mediaType', searchParams.mediaType);
+    if (searchParams.minPrice) params.append('minPrice', searchParams.minPrice);
+    if (searchParams.maxPrice) params.append('maxPrice', searchParams.maxPrice);
+
+    const response = await axios.get(`/api/media/search?${params}`);
+    return response.data;
+  } catch (error) {
+    return [];
+  }
+};
+```
+
+### View Media Details
+```javascript
+// GET /api/media/:id
+const fetchMediaDetails = async (mediaId) => {
+  try {
+    const response = await axios.get(`/api/media/${mediaId}`);
+    // Response: { success: true, media: { ... } }
+    return response.data.media;
+  } catch (error) {
+    throw new Error('Media not found');
+  }
+};
+```
+
+### Photographer Upload Media
+```javascript
+// POST /api/media
+const uploadMedia = async (formData) => {
+  const data = new FormData();
+  data.append('file', formData.file); // Required
+  data.append('title', formData.title); // Required
+  data.append('description', formData.description || '');
+  data.append('price', formData.price || 0);
+  data.append('photographer', getCurrentUser()._id); // Required
+  data.append('mediaType', formData.mediaType); // 'photo' or 'video'
+  if (formData.album) data.append('album', formData.album);
+
+  try {
+    const response = await axios.post('/api/media', data, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+
+    return { success: true, media: response.data };
+  } catch (error) {
+    return { success: false, error: error.response.data.message };
+  }
+};
+```
+
+### Photographer's Own Media
+```javascript
+// GET /api/media/mine (requires authentication)
+const fetchMyMedia = async () => {
+  try {
+    const response = await axios.get('/api/media/mine');
+    return response.data.media;
+  } catch (error) {
+    return [];
+  }
+};
+```
+
+### Update Media Price
+```javascript
+// PUT /api/media/:id/price
+const updateMediaPrice = async (mediaId, newPrice, photographerId) => {
+  try {
+    const response = await axios.put(`/api/media/${mediaId}/price`, {
+      price: newPrice,
+      photographerId
+    });
+
+    return { success: true, media: response.data.media };
+  } catch (error) {
+    return { success: false, error: error.response.data.message };
+  }
+};
+```
+
+---
+
+## Shopping Cart
+
+### Get User Cart
+```javascript
+// GET /api/payments/cart/:userId
+const getCart = async (userId) => {
+  try {
+    const response = await axios.get(`/api/payments/cart/${userId}`);
+    return response.data; // { _id, user, items: [...], totalPrice }
+  } catch (error) {
+    return { items: [], totalPrice: 0 };
+  }
+};
+```
+
+### Add to Cart
+```javascript
+// POST /api/payments/cart/add
+const addToCart = async (userId, mediaId) => {
+  try {
+    const response = await axios.post('/api/payments/cart/add', {
+      userId,
+      mediaId
+    });
+
+    return { success: true, cart: response.data.cart };
+  } catch (error) {
+    if (error.response.data.message === 'Item already in cart') {
+      return { success: false, error: 'Item already in cart' };
+    }
+    return { success: false, error: 'Failed to add to cart' };
+  }
+};
+```
+
+### Remove from Cart
+```javascript
+// POST /api/payments/cart/remove
+const removeFromCart = async (userId, mediaId) => {
+  try {
+    const response = await axios.post('/api/payments/cart/remove', {
+      userId,
+      mediaId
+    });
+
+    return { success: true, cart: response.data.cart };
+  } catch (error) {
+    return { success: false, error: 'Failed to remove from cart' };
+  }
+};
+```
+
+### Clear Cart
+```javascript
+// DELETE /api/payments/cart/:userId
+const clearCart = async (userId) => {
+  try {
+    await axios.delete(`/api/payments/cart/${userId}`);
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: 'Failed to clear cart' };
+  }
+};
+```
+
+---
+
+## Payment Integration
+
+### M-Pesa Payment
+```javascript
+// POST /api/payments/mpesa
+const initiateMpesaPayment = async (paymentData) => {
+  try {
+    const response = await axios.post('/api/payments/mpesa', {
+      mediaId: paymentData.mediaId, // Optional for purchases
+      buyerPhone: paymentData.buyerPhone, // Format: 254XXXXXXXXX
+      buyerId: paymentData.buyerId,
+      amount: paymentData.amount, // Required for wallet topup
+      walletTopup: paymentData.walletTopup || false
+    });
+
+    // Response: { success: true, message: "...", payment: {...}, stkResponse: {...} }
+    return {
+      success: true,
+      payment: response.data.payment,
+      stkResponse: response.data.stkResponse
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error.response.data.message
+    };
+  }
+};
+```
+
+### Mock Payment (Testing)
+```javascript
+// POST /api/payments/buy
+const mockPayment = async (mediaId, buyerId, useWallet = false) => {
+  try {
+    const response = await axios.post('/api/payments/buy', {
+      mediaId,
+      buyerId,
+      useWallet
+    });
+
+    return {
+      success: true,
+      message: response.data.message,
+      payment: response.data.payment
+    };
+  } catch (error) {
+    return { success: false, error: error.response.data.message };
+  }
+};
+```
+
+### Wallet Top-up
+```javascript
+// POST /api/payments/mpesa with walletTopup: true
+const topupWallet = async (buyerPhone, buyerId, amount) => {
+  return initiateMpesaPayment({
+    buyerPhone,
+    buyerId,
+    amount,
+    walletTopup: true
+  });
+};
+```
+
+---
+
+## Purchase History & Downloads
+
+### Get Purchase History
+```javascript
+// GET /api/payments/purchase-history/:userId
+const getPurchaseHistory = async (userId) => {
+  try {
+    const response = await axios.get(`/api/payments/purchase-history/${userId}`);
+    // Response: Array of purchases with media details
+    return response.data;
+  } catch (error) {
+    return [];
+  }
+};
+```
+
+### Download Purchased Media
+```javascript
+// Step 1: Get protected access (verifies purchase)
+// GET /api/media/:id/protected
+const getDownloadAccess = async (mediaId) => {
+  try {
+    const response = await axios.get(`/api/media/${mediaId}/protected`);
+    // Response: { success: true, media: {...}, downloadUrl: "..." }
+
+    return {
+      success: true,
+      media: response.data.media,
+      downloadUrl: response.data.downloadUrl
+    };
+  } catch (error) {
+    return { success: false, error: error.response.data.message };
+  }
+};
+
+// Step 2: Download using signed URL
+const downloadMedia = (downloadUrl) => {
+  // Open in new tab or trigger download
+  window.open(downloadUrl, '_blank');
+};
+```
+
+### Complete Download Flow
+```javascript
+const handleDownload = async (mediaId) => {
+  const access = await getDownloadAccess(mediaId);
+  if (access.success) {
+    downloadMedia(access.downloadUrl);
+  } else {
+    alert('Download failed: ' + access.error);
+  }
+};
+```
+
+---
+
+## Photographer Dashboard
+
+### Earnings Summary
+```javascript
+// GET /api/payments/earnings-summary/:photographerId
+const getEarningsSummary = async (photographerId) => {
+  try {
+    const response = await axios.get(`/api/payments/earnings-summary/${photographerId}`);
+    // Response: { earnings: {...}, sales: {...}, recentSales: [...] }
+    return response.data;
+  } catch (error) {
+    return { earnings: { totalEarned: 0 }, sales: { totalSales: 0 } };
+  }
+};
+```
+
+### Detailed Sales
+```javascript
+// GET /api/payments/earnings/:photographerId
+const getDetailedEarnings = async (photographerId) => {
+  try {
+    const response = await axios.get(`/api/payments/earnings/${photographerId}`);
+    return response.data.sales; // Array of sales with buyer details
+  } catch (error) {
+    return [];
+  }
+};
+```
+
+### Update Photographer Phone (for payments)
+```javascript
+// PUT /api/auth/photographers/:id/phone
+const updatePhotographerPhone = async (photographerId, phoneNumber) => {
+  try {
+    const response = await axios.put(`/api/auth/photographers/${photographerId}/phone`, {
+      phoneNumber // Format: 254XXXXXXXXX
+    });
+
+    return { success: true, user: response.data.user };
+  } catch (error) {
+    return { success: false, error: error.response.data.message };
+  }
+};
+```
+
+---
+
+## Admin Panel
+
+### Revenue Dashboard
+```javascript
+// GET /api/payments/admin/dashboard
+const getAdminDashboard = async () => {
+  try {
+    const response = await axios.get('/api/payments/admin/dashboard');
+    // Response: { allPayments: [...], totalRevenue, totalSales, totalPhotographerEarnings }
+    return response.data;
+  } catch (error) {
+    return { totalRevenue: 0, totalSales: 0, allPayments: [] };
+  }
+};
+```
+
+### User Management
+```javascript
+// GET /api/auth/users
+const getAllUsers = async () => {
+  try {
+    const response = await axios.get('/api/auth/users');
+    return response.data; // Array of all users
+  } catch (error) {
+    return [];
+  }
+};
+
+// PUT /api/auth/users/:id
+const updateUser = async (userId, updateData) => {
+  try {
+    const response = await axios.put(`/api/auth/users/${userId}`, updateData);
+    return { success: true, user: response.data };
+  } catch (error) {
+    return { success: false, error: error.response.data.message };
+  }
+};
+```
+
+### Refund Management
+```javascript
+// GET /api/payments/admin/refunds
+const getAllRefunds = async () => {
+  try {
+    const response = await axios.get('/api/payments/admin/refunds');
+    return response.data; // Array of all refunds
+  } catch (error) {
+    return [];
+  }
+};
+
+// POST /api/payments/refund/approve
+const approveRefund = async (refundId, refundAmount) => {
+  try {
+    const response = await axios.post('/api/payments/refund/approve', {
+      refundId,
+      refundAmount
+    });
+
+    return { success: true, refund: response.data.refund };
+  } catch (error) {
+    return { success: false, error: error.response.data.message };
+  }
+};
+```
+
+### Settings Management
+```javascript
+// GET /api/admin/settings
+const getSettings = async () => {
+  try {
+    const response = await axios.get('/api/admin/settings');
+    return response.data;
+  } catch (error) {
+    return {};
+  }
+};
+
+// PUT /api/admin/settings
+const updateSettings = async (settings) => {
+  try {
+    const response = await axios.put('/api/admin/settings', settings);
+    return { success: true, settings: response.data.settings };
+  } catch (error) {
+    return { success: false, error: error.response.data.message };
+  }
+};
+```
+
+---
+
+## Error Handling
+
+### Global Error Handler
+```javascript
+// Add to main App component or axios interceptor
+axios.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Token expired or invalid
+      logout();
+      window.location.href = '/login';
+    } else if (error.response?.status === 403) {
+      // Forbidden - show permission error
+      alert('You do not have permission to perform this action');
+    } else if (error.response?.status === 500) {
+      // Server error
+      alert('Server error. Please try again later.');
+    }
+
+    return Promise.reject(error);
+  }
+);
+```
+
+### Component Error Handling
+```javascript
+const [error, setError] = useState(null);
+const [loading, setLoading] = useState(false);
+
+const handleApiCall = async (apiFunction) => {
+  setLoading(true);
+  setError(null);
+
+  try {
+    const result = await apiFunction();
+    return result;
+  } catch (err) {
+    const errorMessage = err.response?.data?.message || err.message;
+    setError(errorMessage);
+    return null;
+  } finally {
+    setLoading(false);
+  }
+};
+```
+
+### Loading States
+```javascript
+const LoadingSpinner = () => (
+  <div className="flex justify-center items-center p-4">
+    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+  </div>
+);
+
+const ErrorMessage = ({ error }) => (
+  error ? (
+    <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+      {error}
+    </div>
+  ) : null
+);
+```
+
+---
+
+## API Response Formats
+
+### Success Responses
+```javascript
+// Authentication
+{
+  "token": "jwt-token-here",
+  "user": {
+    "_id": "user-id",
+    "username": "john_doe",
+    "email": "john@example.com",
+    "role": "photographer",
+    "profilePicture": "/uploads/profiles/1234567890.jpg",
+    "phoneNumber": "254712345678"
+  }
+}
+
+// Media List
+{
+  "success": true,
+  "media": [
+    {
+      "_id": "media-id",
+      "title": "Beautiful Sunset",
+      "description": "A stunning sunset photo",
+      "price": 50,
+      "fileUrl": "/uploads/photos/1234567890.jpg",
+      "mediaType": "photo",
+      "photographer": {
+        "_id": "photographer-id",
+        "username": "photographer1"
+      },
+      "views": 150,
+      "downloads": 25,
+      "createdAt": "2024-01-15T10:30:00.000Z"
+    }
+  ]
+}
+
+// Payment
+{
+  "success": true,
+  "message": "STK Push initiated. Please check your phone.",
+  "payment": {
+    "_id": "payment-id",
+    "buyer": "buyer-id",
+    "media": "media-id",
+    "amount": 50,
+    "status": "pending",
+    "checkoutRequestID": "ws_CO_1234567890"
+  }
+}
+```
+
+### Error Responses
+```javascript
+// Authentication Error
+{
+  "message": "Invalid email or password"
+}
+
+// Validation Error
+{
+  "message": "Username, email, password, and phoneNumber are required"
+}
+
+// Permission Error
+{
+  "message": "Forbidden: Photographers only"
+}
+
+// Server Error
+{
+  "message": "Internal server error"
+}
+```
+
+### HTTP Status Codes
+- `200` - Success
+- `201` - Created
+- `400` - Bad Request (validation error)
+- `401` - Unauthorized (invalid/missing token)
+- `403` - Forbidden (insufficient permissions)
+- `404` - Not Found
+- `500` - Internal Server Error
+
+---
+
+## Complete Frontend Architecture
+
+### Component Structure
+```
+src/
+├── components/
+│   ├── Auth/
+│   │   ├── Login.jsx
+│   │   ├── Register.jsx
+│   │   └── ProtectedRoute.jsx
+│   ├── Media/
+│   │   ├── MediaCard.jsx
+│   │   ├── MediaGallery.jsx
+│   │   ├── MediaUpload.jsx
+│   │   └── MediaViewer.jsx
+│   ├── Cart/
+│   │   ├── CartItem.jsx
+│   │   └── Cart.jsx
+│   ├── Payment/
+│   │   ├── PaymentForm.jsx
+│   │   └── MpesaPayment.jsx
+│   ├── Dashboard/
+│   │   ├── PhotographerDashboard.jsx
+│   │   ├── AdminDashboard.jsx
+│   │   └── UserDashboard.jsx
+│   └── common/
+│       ├── LoadingSpinner.jsx
+│       ├── ErrorMessage.jsx
+│       └── Navigation.jsx
+├── api/
+│   └── apiConfig.js
+├── context/
+│   └── AuthContext.jsx
+└── pages/
+    ├── Home.jsx
+    ├── Login.jsx
+    ├── Register.jsx
+    ├── Dashboard.jsx
+    └── Admin.jsx
+```
+
+### State Management
+```javascript
+// AuthContext.jsx
+import React, { createContext, useState, useEffect } from 'react';
+
+export const AuthContext = createContext();
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    const userData = localStorage.getItem('user');
+
+    if (token && userData) {
+      setUser(JSON.parse(userData));
+    }
+
+    setLoading(false);
+  }, []);
+
+  const login = (userData, token) => {
+    setUser(userData);
+    localStorage.setItem('token', token);
+    localStorage.setItem('user', JSON.stringify(userData));
+  };
+
+  const logout = () => {
+    setUser(null);
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+  };
+
+  return (
+    <AuthContext.Provider value={{ user, login, logout, loading }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+```
+
+This guide provides complete frontend integration for the PhotoMarket API. Each section includes practical code examples for implementing the features in your React application.
+
+
+## 5. RECEIPTS & INVOICES
+**Location:** /pages/Receipt or /components/Receipt
+
+### Features:
+- [ ] View Receipt
+  - API: GET /api/payments/receipt/:receiptId
+  - Show: receipt number, date, items, total, breakdown
+
+- [ ] User Receipts List
+  - API: GET /api/payments/receipts/:userId
+  - Display all past receipts
+  - Link to view each receipt
+  - Download receipt as PDF
+
+- [ ] PDF Download
+  - Convert receipt to PDF (use jsPDF library)
+  - Email receipt option (optional)
+
+
+## 6. USER PURCHASE HISTORY
+**Location:** /pages/MyPurchases or /pages/Dashboard
+
+### Features:
+- [ ] View Purchase History
+  - API: GET /api/payments/purchase-history/:userId
+  - Show: photos purchased, dates, prices
+  - Status: completed, refunded
+
+- [ ] Download Purchased Media
+  - API: GET /api/payments/purchase-history/:userId (returns signed URLs)
+  - Button: Download with signed URL protection
+  - Expiration: signed URLs expire after 1 hour
+
+- [ ] Filter/Sort Purchases
+  - By date, price, photographer
+  - Search by photo name
+
+
+## 7. REFUND MANAGEMENT
+**Location:** /pages/MyPurchases or /pages/Account
+
+### Features:
+- [ ] Request Refund
+  - API: POST /api/payments/refund/request
+  - Body: {paymentId, reason}
+  - Show: confirmation message
+
+- [ ] View Refund Status
+  - API: GET /api/payments/refunds/:userId
+  - Show: all refund requests with status
+  - Status: pending, approved, rejected, processed
+
+- [ ] Refund Details
+  - Show reason, amount, status
+  - If rejected: show admin's rejection reason
+  - If processed: confirmation of wallet credit
+
+
+## 8. USER WALLET
+**Location:** /pages/Wallet or /components/WalletCard
+
+### Features:
+- [ ] View Wallet Balance
+  - API: GET /api/payments/wallet/:userId
+  - Show: current balance, total earned, total withdrawn
+
+- [ ] Wallet History/Transactions
+  - Show: all credits/debits
+  - Dates, amounts, sources (refund, purchase, etc.)
+
+- [ ] Withdraw Funds (Optional)
+  - Button to request withdrawal
+  - Enter bank details
+  - Track withdrawal status
+
+
+## 9. PHOTOGRAPHER DASHBOARD
+**Location:** /pages/PhotographerDashboard or /dashboard/photographer
+
+### Features:
+- [ ] Earnings Summary
+  - API: GET /api/payments/earnings-summary/:photographerId
+  - Show: total earned, current balance, recent sales
+  - Display: top selling photo, average price
+
+- [ ] Upload/Manage Photos
+  - API: POST /api/media (create)
+  - Form: title, description, price, category, file upload
+  - Show uploaded photos list
+
+- [ ] Set Price Per Photo
+  - API: PUT /api/media/:id/price
+  - Body: {price, photographerId}
+  - Show: current price, ability to edit
+  - Confirmation before saving
+
+- [ ] View Sales
+  - API: GET /api/payments/earnings/:photographerId
+  - Table: photo name, buyer, date, amount
+  - Export sales report (CSV)
+
+- [ ] Edit Media Details
+  - API: PUT /api/media/:id
+  - Update: title, description, category
+  - Delete photo: DELETE /api/media/:id
+
+
+## 10. ADMIN DASHBOARD
+**Location:** /pages/AdminDashboard or /admin/dashboard
+
+### Features:
+- [ ] Revenue Dashboard
+  - API: GET /api/payments/admin/dashboard
+  - Show: total revenue, total sales, revenue breakdown
+  - Charts: sales by month, top photos
+
+- [ ] All Payments
+  - Display: all completed payments
+  - Show: buyer, photo, amount, date
+  - Filter: by date, photographer, payment method
+
+- [ ] All Receipts
+  - API: GET /api/payments/admin/receipts
+  - View all user receipts
+  - Search/filter functionality
+
+- [ ] Refund Management
+  - API: GET /api/payments/admin/refunds
+  - Show: pending refunds, approved, rejected
+  - Buttons: Approve refund (POST /api/payments/refund/approve)
+  - Buttons: Reject refund (POST /api/payments/refund/reject)
+  - Admin fills rejection reason
+  - Button: Process refund (POST /api/payments/refund/process)
+  - Confirm refund processed to wallet
+
+
+## 11. USER PROFILE
+**Location:** /pages/Profile or /components/UserProfile
+
+### Features:
+- [ ] View Profile
+  - Show: username, email, profile picture, role
+  - Bio/About (if available)
+
+- [ ] Edit Profile
+  - Update: username, email, password, profile picture
+  - API: User create/update (use auth controller or create profile endpoint)
+
+- [ ] View Role-Specific Info
+  - If photographer: show earnings, sales, photos
+  - If admin: show dashboard access
+  - If user: show purchases, wallet
+
+
+## 12. PROTECTED MEDIA ACCESS
+**Location:** /pages/MediaViewer or Modal
+
+### Features:
+- [ ] Verify Purchase Before Access
+  - Check if user purchased the photo
+  - API: GET /api/payments/purchase-history/:userId
+  - Match mediaId in purchases
+
+- [ ] Generate Secure Download Link
+  - API: GET /api/media/:id/protected (requires auth)
+  - Returns signed URL with expiration
+  - Pass token in query params
+
+- [ ] Download with Token Verification
+  - Verify token hasn't expired
+  - Verify user is authenticated
+  - Serve file only if conditions met
+
+
+## 13. NAVIGATION & LAYOUT
+**Location:** /components/Navigation or /components/Header
+
+### Features:
+- [ ] Navigation Menu
+  - Home (Browse)
+  - My Purchases
+  - My Cart (with badge count)
+  - My Wallet
+  - My Refunds
+  - My Profile
+  - [FOR PHOTOGRAPHERS] Photographer Dashboard
+  - [FOR ADMIN] Admin Dashboard
+  - Logout
+
+- [ ] User Dropdown
+  - Profile link
+  - Wallet link
+  - Settings
+  - Logout
+
+
+## 14. NOTIFICATIONS & TOASTS
+**Location:** Globally accessible
+
+### Features:
+- [ ] Success Messages
+  - Item added to cart
+  - Payment successful
+  - Refund processed
+  - Price updated
+
+- [ ] Error Messages
+  - Payment failed
+  - Refund request failed
+  - Upload failed
+
+- [ ] Loading States
+  - During payment processing
+  - During file upload
+  - During data fetching
+
+
+## 15. RESPONSIVE DESIGN
+**Location:** All pages
+
+### Features:
+- [ ] Mobile Responsive
+  - Photo grid responsive
+  - Cart mobile-friendly
+  - Forms mobile-optimized
+
+- [ ] Dark/Light Mode (Optional)
+  - Theme toggle
+  - Persist theme preference
+
+
+## IMPLEMENTATION ORDER (RECOMMENDED):
+1. Setup Auth (Register/Login/Context)
+2. Browse & Search Photos
+3. Photo Details Display
+4. Shopping Cart
+5. Checkout & Payment (Mock first, then MPesa)
+6. Receipts
+7. Purchase History with Downloads
+8. User Wallet
+9. Photographer Dashboard
+10. Refund Management
+11. Admin Dashboard
+12. Protected Media Access
+13. Polish & Responsive Design
+14. Testing & Optimization
+
+
+## KEY LIBRARIES RECOMMENDED:
+- axios (API calls)
+- react-router-dom (routing)
+- zustand or Redux (state management)
+- tailwindcss or material-ui (styling)
+- jsPDF (receipt PDFs)
+- react-toastify (notifications)
+- chart.js (admin dashboard charts)
+- cloudinary-react (image display)
