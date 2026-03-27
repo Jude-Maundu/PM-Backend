@@ -1,6 +1,6 @@
 import express from 'express';
 import passport from '../config/passport.js';
-import {register, login, updatePhotographerPhone, googleAuthCallback} from '../controllers/authController.js';
+import {register, login, updatePhotographerPhone, googleAuthCallback, getCurrentUser} from '../controllers/authController.js';
 import { uploadProfile } from '../middlewares/upload.js';
 import { getAllUsers, getUser, updateUser, DeleteUser } from '../controllers/authController.js';
 import { followUser, unfollowUser, getUserFollowers, getUserFollowing, isFollowing } from '../controllers/followController.js';
@@ -11,6 +11,7 @@ const router = express.Router();
 // Traditional auth routes
 router.post('/register', uploadProfile.single('profilePicture'), register);
 router.post('/login', login);
+router.get('/me', authenticate, getCurrentUser);
 
 // Google OAuth routes - with fallback error handling if credentials not configured
 router.get('/google', (req, res, next) => {

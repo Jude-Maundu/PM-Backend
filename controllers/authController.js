@@ -271,4 +271,25 @@ async function updatePhotographerPhone(req, res) {
   }
 }
 
-export { register, login, getAllUsers, getUser, updateUser, DeleteUser, updatePhotographerPhone, googleAuthCallback };
+// Get current authenticated user
+async function getCurrentUser(req, res) {
+  try {
+    const userId = req.user?.userId || req.user?.id || req.user?._id;
+    
+    if (!userId) {
+      return res.status(401).json({ message: "User ID not found in token" });
+    }
+
+    const user = await User.findById(userId).select("-password");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const { password: pw, ...safeData } = user._doc;
+    return res.status(200).json(safeData);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
+}
+
+export { register, login, getAllUsers, getUser, updateUser, DeleteUser, updatePhotographerPhone, googleAuthCallback, getCurrentUser };
