@@ -1,4 +1,5 @@
 import User from "../models/users.js";
+import Media from "../models/media.js";
 import Payment from "../models/Payment.js";
 import Refund from "../models/Refund.js";
 import Wallet from "../models/Wallet.js";
@@ -48,22 +49,26 @@ export async function getTransactions(req, res) {
 
     if (user.role === "photographer") {
       // Get earnings for photographer
-      const payments = await Payment.find({
-        "media.photographer": userId,
-        status: "completed"
-      })
-        .populate("media", "title price")
-        .populate("buyer", "username email")
-        .sort({ createdAt: -1 });
+      const mediaItems = await Media.find({ photographer: userId }).select("_id");
+      const mediaIds = mediaItems.map((m) => m._id);
 
-      transactions = payments.map(p => ({
+      const payments = mediaIds.length > 0
+        ? await Payment.find({ media: { $in: mediaIds }, status: "completed" })
+            .populate("media", "title price")
+            .populate("buyer", "username email")
+            .sort({ createdAt: -1 })
+        : [];
+
+      transactions = payments.map((p) => ({
         id: p._id,
         type: "earnings",
         amount: p.photographerShare,
         description: `Earnings from ${p.buyer?.username || 'Unknown'} for ${p.media?.title}`,
         date: p.createdAt,
         status: "completed",
-        reference: p._id
+        reference: p._id,
+        buyer: p.buyer || null,
+        mediaTitle: p.media?.title || null
       }));
     } else if (user.role === "buyer") {
       // Get purchases and topups for buyer
