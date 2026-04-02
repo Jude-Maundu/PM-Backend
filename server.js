@@ -42,7 +42,12 @@ console.log("✅ User routes router imported", !!userRoutes);
 const app = express();
 
 // If running behind a proxy (e.g., Render), trust the X-Forwarded-* headers.
-app.set('trust proxy', true);
+// Use explicit env to avoid permissive rate-limit behavior warnings.
+if (process.env.TRUST_PROXY === 'true' || process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', true);
+} else {
+  app.set('trust proxy', false);
+}
 
 // ==================== MIDDLEWARE ====================
 // Security headers
@@ -280,40 +285,41 @@ const mongoURI =
   process.env.MONGO_URI ||
   'mongodb://localhost:27017/photomarket';
 
+async function startServer() {
+  const PORT = process.env.PORT || 4000;
+  const httpServer = createServer(app);
+
+  // Initialize Socket.IO
+  initializeSocket(httpServer);
+
+  httpServer.listen(PORT, () => {
+    console.log(`🚀 Server running at http://localhost:${PORT}`);
+    console.log(`📝 Test API: http://localhost:${PORT}/api/test`);
+    console.log(`💰 M-Pesa Test Token: http://localhost:${PORT}/test-token`);
+    console.log(`📲 STK Push: POST http://localhost:${PORT}/api/payments/mpesa`);
+    console.log(`📞 M-Pesa Callback: POST http://localhost:${PORT}/api/payments/callback`);
+
+    // Start MPesa retry worker
+    setInterval(() => {
+      processPendingB2cRetries();
+    }, 1000 * 60); // every 1 minute
+
+    console.log(`⏳ MPesa retry worker started (every 60 sec)`);
+  });
+}
+
 async function dbconnection() {
   try {
     await mongoose.connect(mongoURI);
-
     console.log("✅ Connected to MongoDB");
 
     // Ensure an admin user exists (for initial setup)
     await ensureAdminUser();
-
-    // Start server AFTER successful database connection
-    const PORT = process.env.PORT || 4000;
-    const httpServer = createServer(app);
-
-    // Initialize Socket.IO
-    initializeSocket(httpServer);
-
-    httpServer.listen(PORT, () => {
-      console.log(`🚀 Server running at http://localhost:${PORT}`);
-      console.log(`📝 Test API: http://localhost:${PORT}/api/test`);
-      console.log(`💰 M-Pesa Test Token: http://localhost:${PORT}/test-token`);
-      console.log(`📲 STK Push: POST http://localhost:${PORT}/api/payments/mpesa`);
-      console.log(`📞 M-Pesa Callback: POST http://localhost:${PORT}/api/payments/callback`);
-
-      // Start MPesa retry worker
-      setInterval(() => {
-        processPendingB2cRetries();
-      }, 1000 * 60); // every 1 minute
-
-      console.log(`⏳ MPesa retry worker started (every 60 sec)`);
-    });
-    
   } catch (error) {
-    console.error("❌ MongoDB connection error:", error);
-    process.exit(1);
+    console.error("❌ MongoDB connection error:", error.message || error);
+    console.warn("⚠️ Continuing startup without MongoDB. Some features may not work.");
+  } finally {
+    await startServer();
   }
 }
 
