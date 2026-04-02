@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import Conversation from "../models/Conversation.js";
 import Message from "../models/Message.js";
 import User from "../models/users.js";
+import { emitToConversation, emitToUser } from "../services/socketService.js";
 
 // ==================== CONVERSATION ENDPOINTS ====================
 
@@ -121,6 +122,9 @@ export async function sendMessage(req, res) {
 
     await conversation.save();
 
+    // Emit real-time event to conversation participants
+    emitToConversation(conversationId, "new_message", { message, conversationId });
+
     res.status(201).json(message);
   } catch (error) {
     console.error("[sendMessage] Error:", error);
@@ -210,6 +214,16 @@ export async function editMessage(req, res) {
 
     await message.populate("sender", "username profilePicture");
 
+    const conversationId = message.conversation?.toString() || req.params.conversationId;
+    if (conversationId) {
+      emitToConversation(conversationId, "message_edited", {
+        messageId: message._id,
+        text: message.text,
+        editedAt: message.editedAt,
+        editHistory: message.editHistory,
+      });
+    }
+
     res.status(200).json(message);
   } catch (error) {
     console.error("[editMessage] Error:", error);
@@ -235,6 +249,11 @@ export async function deleteMessage(req, res) {
     // Verify ownership
     if (message.sender.toString() !== userId.toString()) {
       return res.status(403).json({ message: "You can only delete your own messages" });
+    }
+
+    const conversationId = message.conversation?.toString();
+    if (conversationId) {
+      emitToConversation(conversationId, "message_deleted", { messageId: message._id });
     }
 
     if (hard === 'true') {
@@ -281,6 +300,11 @@ export async function addReaction(req, res) {
       emojiReactions.push(userId);
       message.reactions.set(emoji, emojiReactions);
       await message.save();
+    }
+
+    const convId = message.conversation?.toString();
+    if (convId) {
+      emitToConversation(convId, "reaction_added", { messageId: message._id, emoji, userId });
     }
 
     res.status(200).json(message);

@@ -1,4 +1,5 @@
 import express from "express";
+import { createServer } from "http";
 import mongoose from "mongoose";
 import cors from "cors";
 import session from "express-session";
@@ -8,24 +9,16 @@ import path from "path";
 import { fileURLToPath } from "url";
 import fs from 'fs';
 import bcrypt from "bcrypt";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import User from "./models/users.js";
 
 // Get __dirname equivalent in ES modules
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load environment variables FIRST - before anything else
+// Load environment variables
 dotenv.config({ path: path.join(__dirname, '.env') });
-
-// Debug: Check if credentials loaded
-console.log('=== Environment Variables Loaded ===');
-console.log('PORT:', process.env.PORT);
-console.log('MONGODB_URI exists:', !!process.env.MONGODB_URI);
-console.log('JWT_SECRET exists:', !!process.env.JWT_SECRET);
-console.log('MPESA_CONSUMER_KEY exists:', !!process.env.MPESA_CONSUMER_KEY);
-console.log('MPESA_SECRET_KEY exists:', !!process.env.MPESA_SECRET_KEY);
-console.log('MPESA_PASSKEY exists:', !!process.env.MPESA_PASSKEY);
-console.log('===================================');
 
 // Import routers
 import authRouter from "./routes/authcontroller.js";
@@ -41,6 +34,7 @@ import mpesaDiagnosticsRoutes from "./routes/mpesaDiagnosticsRoutes.js";
 import withdrawalRoutes from "./routes/withdrawalRoutes.js";
 import { processPendingB2cRetries } from "./controllers/paymentController.js";
 import emailService from "./services/emailService.js";
+import { initializeSocket } from "./services/socketService.js";
 
 console.log("✅ Admin settings router imported", !!adminSettingsRouter);
 console.log("✅ User routes router imported", !!userRoutes);
@@ -51,6 +45,17 @@ const app = express();
 app.set('trust proxy', true);
 
 // ==================== MIDDLEWARE ====================
+// Security headers
+app.use(helmet());
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: { message: "Too many requests, please try again later." }
+});
+app.use("/api", limiter);
+
 // CORS configuration
 app.use(
   cors({
@@ -132,9 +137,14 @@ console.log('✅ Passport initialized successfully');
 
 // ==================== INITIAL SETUP ====================
 async function ensureAdminUser() {
-  const adminEmail = "admin@gmail.com";
-  const adminUsername = "admin";
-  const adminPassword = "000000";
+  const adminEmail = process.env.ADMIN_EMAIL || "admin@photomarket.com";
+  const adminUsername = process.env.ADMIN_USERNAME || "admin";
+  const adminPassword = process.env.ADMIN_PASSWORD;
+
+  if (!adminPassword) {
+    console.warn("⚠️ ADMIN_PASSWORD not set in .env — skipping admin user creation");
+    return;
+  }
 
   try {
     const existingAdmin = await User.findOne({ email: adminEmail });
@@ -281,7 +291,12 @@ async function dbconnection() {
 
     // Start server AFTER successful database connection
     const PORT = process.env.PORT || 4000;
-    app.listen(PORT, () => {
+    const httpServer = createServer(app);
+
+    // Initialize Socket.IO
+    initializeSocket(httpServer);
+
+    httpServer.listen(PORT, () => {
       console.log(`🚀 Server running at http://localhost:${PORT}`);
       console.log(`📝 Test API: http://localhost:${PORT}/api/test`);
       console.log(`💰 M-Pesa Test Token: http://localhost:${PORT}/test-token`);

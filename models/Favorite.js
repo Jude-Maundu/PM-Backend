@@ -5,14 +5,12 @@ const favoriteSchema = new Schema({
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
-    required: true,
-    index: true
+    required: true
   },
   media: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Media",
-    required: true,
-    index: true
+    required: true
   },
   addedAt: {
     type: Date,

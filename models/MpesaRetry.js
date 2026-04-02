@@ -3,14 +3,12 @@ import mongoose from "mongoose";
 const mpesaRetrySchema = new mongoose.Schema({
   payment: { 
     type: mongoose.Schema.Types.ObjectId, 
-    ref: "Payment",
-    index: true
+    ref: "Payment"
   },
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
-    required: true,
-    index: true
+    required: true
   },
   type: { 
     type: String, 
@@ -22,13 +20,12 @@ const mpesaRetrySchema = new mongoose.Schema({
   reference: String,
   description: String,
   attemptCount: { type: Number, default: 0 },
-  nextAttemptAt: { type: Date, default: Date.now, index: true },
+  nextAttemptAt: { type: Date, default: Date.now },
   maxAttempts: { type: Number, default: 5 },
   status: { 
     type: String, 
     enum: ["pending", "processing", "success", "failed"], 
-    default: "pending",
-    index: true
+    default: "pending"
   },
   lastError: mongoose.Schema.Types.Mixed,
 }, { timestamps: true });

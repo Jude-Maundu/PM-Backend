@@ -4,8 +4,7 @@ const paymentSchema = new mongoose.Schema({
   buyer: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
-    required: true,
-    index: true
+    required: true
   },
   photographer: {
     type: mongoose.Schema.Types.ObjectId,
@@ -41,8 +40,7 @@ const paymentSchema = new mongoose.Schema({
   status: {
     type: String,
     enum: ["pending", "completed", "failed", "refunded"],
-    default: "pending",
-    index: true
+    default: "pending"
   },
   paymentMethod: {
     type: String,

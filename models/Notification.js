@@ -5,20 +5,17 @@ const notificationSchema = new mongoose.Schema(
     recipient: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
-      index: true,
+      required: true
     },
     sender: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
-      index: true,
+      required: true
     },
     type: {
       type: String,
       enum: ["share", "purchase", "payment", "admin", "system"],
-      default: "share",
-      index: true,
+      default: "share"
     },
     title: {
       type: String,
@@ -34,8 +31,7 @@ const notificationSchema = new mongoose.Schema(
     },
     isRead: {
       type: Boolean,
-      default: false,
-      index: true,
+      default: false
     },
     readAt: Date,
     actionUrl: String, // URL to navigate to (e.g., /share/token)
@@ -43,13 +39,11 @@ const notificationSchema = new mongoose.Schema(
     priority: {
       type: String,
       enum: ["low", "normal", "high"],
-      default: "normal",
-      index: true,
+      default: "normal"
     },
     createdAt: {
       type: Date,
-      default: Date.now,
-      index: true,
+      default: Date.now
     },
   },
   { timestamps: true }

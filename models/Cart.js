@@ -4,9 +4,7 @@ const cartSchema = new mongoose.Schema({
   user: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: "User", 
-    required: true,
-    unique: true,
-    index: true
+    required: true
   },
   items: [
     {
@@ -18,8 +16,8 @@ const cartSchema = new mongoose.Schema({
   totalPrice: { type: Number, default: 0 }
 }, { timestamps: true });
 
-// Index for quick lookups
-cartSchema.index({ user: 1 });
+// Schema-level indexes
+cartSchema.index({ user: 1 }, { unique: true });
 cartSchema.index({ "items.media": 1 });
 
 const Cart = mongoose.model("Cart", cartSchema);

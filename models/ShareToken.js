@@ -13,16 +13,13 @@ const shareTokenSchema = new mongoose.Schema({
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
-    required: true,
-    index: true
+    required: true
   },
   
   // Token & Sharing
   token: {
     type: String,
-    unique: true,
-    required: true,
-    index: true
+    required: true
   },
   shareUrl: {
     type: String,
@@ -36,8 +33,7 @@ const shareTokenSchema = new mongoose.Schema({
   // Expiration & Limits
   expiresAt: {
     type: Date,
-    required: true,
-    index: true
+    required: true
   },
   maxDownloads: {
     type: Number,
@@ -58,8 +54,7 @@ const shareTokenSchema = new mongoose.Schema({
   // Status
   isActive: {
     type: Boolean,
-    default: true,
-    index: true
+    default: true
   },
   revokedAt: {
     type: Date,
@@ -107,8 +102,11 @@ const shareTokenSchema = new mongoose.Schema({
   ]
 }, { timestamps: true });
 
-// Auto-delete expired tokens (TTL)
+// Schema-level indexes
+shareTokenSchema.index({ createdBy: 1 });
+shareTokenSchema.index({ token: 1 }, { unique: true });
 shareTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+shareTokenSchema.index({ isActive: 1 });
 shareTokenSchema.index({ createdBy: 1, createdAt: -1 });
 
 const ShareToken = mongoose.model("ShareToken", shareTokenSchema);

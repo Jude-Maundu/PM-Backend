@@ -7,7 +7,7 @@ const mediaSchema = new mongoose.Schema({
   fileUrl: { type: String, required: true }, 
   mediaType: { type: String, enum: ["photo", "video"], required: true },
   album: { type: mongoose.Schema.Types.ObjectId, ref: "Album", default: null },
-  photographer: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
+  photographer: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   views: { type: Number, default: 0 },
   likes: { type: Number, default: 0 },
   downloads: { type: Number, default: 0 },

@@ -4,15 +4,12 @@ const receiptSchema = new mongoose.Schema({
   buyer: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: "User", 
-    required: true,
-    index: true
+    required: true
   },
   payment: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: "Payment", 
-    required: true,
-    unique: true,
-    index: true
+    required: true
   },
   items: [
     {
@@ -26,10 +23,10 @@ const receiptSchema = new mongoose.Schema({
   totalAmount: { type: Number, required: true },
   adminShare: { type: Number, required: true },
   method: { type: String, enum: ["mpesa", "mock", "card"], default: "mpesa" },
-  transactionId: { type: String, index: true },
+  transactionId: { type: String },
   downloadUrl: String, // signed URL for download
-  receiptNumber: { type: String, unique: true, index: true },
-  status: { type: String, enum: ["completed", "refunded", "pending"], default: "completed", index: true }
+  receiptNumber: { type: String },
+  status: { type: String, enum: ["completed", "refunded", "pending"], default: "completed" }
 }, { timestamps: true });
 
 // Indexes for common queries

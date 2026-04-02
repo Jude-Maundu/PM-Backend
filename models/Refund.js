@@ -4,14 +4,12 @@ const refundSchema = new mongoose.Schema({
   payment: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: "Payment", 
-    required: true,
-    index: true
+    required: true
   },
   buyer: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: "User", 
-    required: true,
-    index: true
+    required: true
   },
   media: { 
     type: mongoose.Schema.Types.ObjectId, 
@@ -28,8 +26,7 @@ const refundSchema = new mongoose.Schema({
   status: { 
     type: String, 
     enum: ["pending", "approved", "rejected", "processed"], 
-    default: "pending",
-    index: true
+    default: "pending"
   },
   refundAmount: { type: Number, default: 0 },
   adminRejectionReason: String,

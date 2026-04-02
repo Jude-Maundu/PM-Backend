@@ -4,14 +4,12 @@ const commentSchema = new mongoose.Schema({
   media: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Media",
-    required: true,
-    index: true
+    required: true
   },
   author: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
-    required: true,
-    index: true
+    required: true
   },
   text: {
     type: String,

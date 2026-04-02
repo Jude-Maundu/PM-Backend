@@ -4,20 +4,17 @@ const walletTransactionSchema = new mongoose.Schema({
   wallet: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Wallet",
-    required: true,
-    index: true
+    required: true
   },
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
-    required: true,
-    index: true
+    required: true
   },
   type: {
     type: String,
     enum: ["credit", "debit", "refund", "topup"],
-    required: true,
-    index: true
+    required: true
   },
   amount: {
     type: Number,
@@ -62,6 +59,7 @@ const walletTransactionSchema = new mongoose.Schema({
 walletTransactionSchema.index({ wallet: 1, createdAt: -1 });
 walletTransactionSchema.index({ user: 1, createdAt: -1 });
 walletTransactionSchema.index({ type: 1, createdAt: -1 });
+walletTransactionSchema.index({ status: 1 });
 
 const WalletTransaction = mongoose.model("WalletTransaction", walletTransactionSchema);
 export default WalletTransaction;

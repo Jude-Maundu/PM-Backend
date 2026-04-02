@@ -55,9 +55,16 @@ async function register(req, res) {
       // Don't fail registration if email fails
     }
 
+    // Generate JWT token (same as login)
+    const token = jwt.sign(
+      { userId: newUser._id, email: newUser.email, role: newUser.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
     // Remove password from response
     const { password: pw, ...safeData } = newUser._doc;
-    return res.status(201).json(safeData);
+    return res.status(201).json({ token, user: safeData });
   } catch (error) {
     return res.status(500).json({ error: error.message });
   }
