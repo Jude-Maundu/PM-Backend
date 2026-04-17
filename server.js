@@ -50,18 +50,7 @@ if (process.env.TRUST_PROXY === 'true' || process.env.NODE_ENV === 'production')
 }
 
 // ==================== MIDDLEWARE ====================
-// Security headers
-app.use(helmet());
-
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: { message: "Too many requests, please try again later." }
-});
-app.use("/api", limiter);
-
-// CORS configuration
+// CORS configuration (MUST be before rate limiter)
 app.use(
   cors({
     origin: [
@@ -78,6 +67,21 @@ app.use(
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
   })
 );
+
+// Security headers
+app.use(helmet());
+
+// Rate limiting (after CORS so 429 responses include CORS headers)
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: { message: "Too many requests, please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Trust proxy is already set above, but this ensures rate limiter respects it
+  validate: { trustProxy: false }
+});
+app.use("/api", limiter);
 
 // Session middleware for OAuth
 app.use(
@@ -175,6 +179,15 @@ async function ensureAdminUser() {
 // ==================== TEST ROUTES ====================
 app.get("/api/test", (req, res) => {
   res.json({ message: "Hello from the backend!" });
+});
+
+// Health check endpoint
+app.get("/api/health", (req, res) => {
+  res.json({
+    status: "healthy",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
 });
 
 app.get("/", (req, res) => {

@@ -21,6 +21,7 @@ const authLimiter = rateLimit({
 router.post('/register', authLimiter, uploadProfile.single('profilePicture'), register);
 router.post('/login', authLimiter, login);
 router.get('/me', authenticate, getCurrentUser);
+router.get('/users/me', authenticate, getCurrentUser); // Alias for /me
 
 // Google OAuth routes - with fallback error handling if credentials not configured
 router.get('/google', (req, res, next) => {
