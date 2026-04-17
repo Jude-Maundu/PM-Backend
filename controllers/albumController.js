@@ -1,6 +1,7 @@
 import Media from "../models/media.js";
 import Album from "../models/album.js";
 import User from "../models/users.js";
+import ShareToken from "../models/ShareToken.js";
 
 function getRequestUserId(req) {
   return (
@@ -116,11 +117,15 @@ export async function createMedia(req, res) {
     }
 
     const fileUrl = req.file.path;
+    const parsedPrice = Number(price ?? 0);
+    if (Number.isNaN(parsedPrice) || parsedPrice < 0) {
+      return res.status(400).json({ message: "Media price must be a valid non-negative number" });
+    }
 
     const media = await Media.create({
       title,
       description,
-      price: price || 0,
+      price: parsedPrice,
       fileUrl,
       mediaType,
       album: album || null,
@@ -163,11 +168,12 @@ export async function updateMediaPrice(req, res) {
       return res.status(403).json({ message: "Unauthorized: You don't own this media" });
     }
 
-    if (price < 0) {
-      return res.status(400).json({ message: "Price cannot be negative" });
+    const priceNumber = Number(price);
+    if (Number.isNaN(priceNumber) || priceNumber < 0) {
+      return res.status(400).json({ message: "Price must be a valid non-negative number" });
     }
 
-    media.price = price;
+    media.price = priceNumber;
     await media.save();
 
     res.status(200).json({ message: "Price updated", media });
@@ -261,11 +267,21 @@ export async function createAlbum(req, res) {
       return res.status(400).json({ message: "Album name is required" });
     }
 
+    const albumPrice = Number(price ?? 0);
+    if (Number.isNaN(albumPrice) || albumPrice < 0) {
+      return res.status(400).json({ message: "Album price must be a valid non-negative number" });
+    }
+
+    let coverImageUrl = coverImage || '';
+    if (req.file) {
+      coverImageUrl = req.file.path || req.file.url || req.file.secure_url || coverImageUrl;
+    }
+
     const album = await Album.create({
       name: name.trim(),
       description: description?.trim() || '',
-      coverImage: coverImage || '',
-      price: price || 0,
+      coverImage: coverImageUrl,
+      price: albumPrice,
       photographer: userId,
       media: [],
       mediaCount: 0,
@@ -343,8 +359,18 @@ export async function updateAlbum(req, res) {
 
     if (name) album.name = name.trim();
     if (description !== undefined) album.description = description.trim();
-    if (coverImage !== undefined) album.coverImage = coverImage;
-    if (price !== undefined) album.price = price;
+    if (req.file) {
+      album.coverImage = req.file.path || req.file.url || req.file.secure_url || coverImage || album.coverImage;
+    } else if (coverImage !== undefined) {
+      album.coverImage = coverImage;
+    }
+    if (price !== undefined) {
+      const albumPrice = Number(price);
+      if (Number.isNaN(albumPrice) || albumPrice < 0) {
+        return res.status(400).json({ message: "Album price must be a valid non-negative number" });
+      }
+      album.price = albumPrice;
+    }
 
     await album.save();
 
@@ -519,10 +545,15 @@ export async function bulkUploadAlbumMedia(req, res) {
 
     const uploadedMedia = [];
     for (const file of req.files) {
+      const filePrice = Number(req.body.price ?? 0);
+      if (Number.isNaN(filePrice) || filePrice < 0) {
+        return res.status(400).json({ message: "Uploaded media price must be a valid non-negative number" });
+      }
+
       const media = await Media.create({
         title: file.originalname,
         description: req.body.description || `Uploaded on ${new Date().toLocaleDateString()}`,
-        price: parseFloat(req.body.price) || 0,
+        price: filePrice,
         fileUrl: file.path,
         mediaType: file.mimetype.startsWith('video') ? 'video' : 'photo',
         photographer: photographer || userId,
@@ -559,7 +590,7 @@ export async function bulkUploadAlbumMedia(req, res) {
 export async function createEventAccess(req, res) {
   try {
     const { albumId } = req.params;
-    const { expiresInHours = 24, maxAccess = 10 } = req.body;
+    const { expiresInHours = 24, maxAccess = 10, description, customMessage } = req.body;
     const userId = getRequestUserId(req);
 
     const album = await Album.findOne({ _id: albumId, photographer: userId });
@@ -568,19 +599,32 @@ export async function createEventAccess(req, res) {
     }
 
     const token = Buffer.from(`${albumId}-${Date.now()}-${Math.random()}`).toString('base64').replace(/[/+=]/g, '');
-    const expiresAt = new Date(Date.now() + expiresInHours * 60 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + Number(expiresInHours) * 60 * 60 * 1000);
+    const shareUrl = `${process.env.FRONTEND_URL || process.env.BASE_URL || 'http://localhost:3000'}/album/${albumId}/access/${token}`;
 
-    // Store token in a separate collection (you'd need a ShareToken model)
-    // For now, return the token
-
-    const shareLink = `${process.env.BASE_URL}/share/album/${albumId}/${token}`;
+    const shareToken = await ShareToken.create({
+      media: null,
+      album: album._id,
+      createdBy: userId,
+      token,
+      shareUrl,
+      expiresAt,
+      maxDownloads: Number(maxAccess) || 10,
+      accessCount: 0,
+      isActive: true,
+      description,
+      customMessage
+    });
 
     res.status(201).json({
       success: true,
-      shareLink,
+      shareLink: shareUrl,
       token,
       expiresAt,
-      maxAccess
+      maxAccess: Number(maxAccess) || 10,
+      description,
+      customMessage,
+      shareTokenId: shareToken._id
     });
   } catch (error) {
     console.error("Error creating event access:", error);
@@ -591,19 +635,52 @@ export async function createEventAccess(req, res) {
 export async function getEventMediaByToken(req, res) {
   try {
     const { albumId, token } = req.params;
-    
-    // Verify token (simplified - would need to check against stored tokens)
-    const album = await Album.findById(albumId).populate('media');
+
+    const shareToken = await ShareToken.findOne({ token, album: albumId, isActive: true });
+    if (!shareToken) {
+      return res.status(404).json({ success: false, message: "Access token not found or expired" });
+    }
+
+    if (shareToken.expiresAt && shareToken.expiresAt < new Date()) {
+      shareToken.isActive = false;
+      await shareToken.save();
+      return res.status(410).json({ success: false, message: "Access token has expired" });
+    }
+
+    if (shareToken.maxDownloads && shareToken.accessCount >= shareToken.maxDownloads) {
+      shareToken.isActive = false;
+      await shareToken.save();
+      return res.status(403).json({ success: false, message: "Access limit reached for this album link" });
+    }
+
+    const album = await Album.findById(albumId)
+      .populate('media', 'title price fileUrl mediaType likes views downloads photographer description createdAt')
+      .populate('photographer', 'username email profilePicture');
     if (!album) {
       return res.status(404).json({ message: "Album not found" });
     }
 
+    shareToken.accessCount += 1;
+    shareToken.accessLog.push({
+      timestamp: new Date(),
+      ip: req.ip,
+      userAgent: req.headers['user-agent'] || '',
+      action: 'view'
+    });
+    await shareToken.save();
+
     res.status(200).json({
       success: true,
       album: {
+        _id: album._id,
         name: album.name,
         description: album.description,
-        media: album.media
+        coverImage: album.coverImage,
+        price: album.price,
+        photographer: album.photographer,
+        media: album.media,
+        mediaCount: album.mediaCount,
+        views: album.views
       }
     });
   } catch (error) {

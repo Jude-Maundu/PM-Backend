@@ -11,6 +11,8 @@ import {
   getMpesaRetries,
   getPaymentStatus
 } from "../controllers/paymentController.js";
+import { authenticate } from "../middlewares/auth.js";
+import { requireAdmin } from "../middlewares/admin.js";
 import {
   getCart,
   addToCart,
@@ -109,7 +111,7 @@ router.post("/buy", buyMedia);
 router.get("/purchase-history/:userId", getPurchaseHistory);
 router.get("/earnings/:photographerId", getPhotographerEarnings);
 router.get("/earnings-summary/:photographerId", getPhotographerEarningsSummary);
-router.get("/admin/dashboard", getAdminDashboard);
+router.get("/admin/dashboard", authenticate, requireAdmin, getAdminDashboard);
 
 // ============================================
 // CART ENDPOINTS
@@ -125,7 +127,7 @@ router.delete("/cart/:userId", clearCart);
 router.post("/receipt/create", createReceipt);
 router.get("/receipt/:receiptId", getReceipt);
 router.get("/receipts/:userId", getUserReceipts);
-router.get("/admin/receipts", getAllReceipts);
+router.get("/admin/receipts", authenticate, requireAdmin, getAllReceipts);
 
 // ============================================
 // REFUND ENDPOINTS
@@ -135,7 +137,7 @@ router.get("/refunds/:userId", getUserRefunds);
 router.post("/refund/approve", approveRefund);
 router.post("/refund/reject", rejectRefund);
 router.post("/refund/process", processRefund);
-router.get("/admin/refunds", getAllRefunds);
+router.get("/admin/refunds", authenticate, requireAdmin, getAllRefunds);
 
 // ============================================
 // WALLET ENDPOINTS

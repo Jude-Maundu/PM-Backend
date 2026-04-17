@@ -17,8 +17,10 @@ const albumSchema = new mongoose.Schema({
   price: { 
     type: Number, 
     default: 0 
-  },
-  photographer: { 
+  },  isPrivate: {
+    type: Boolean,
+    default: false
+  },  photographer: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'User', 
     required: true, 

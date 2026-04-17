@@ -1,4 +1,5 @@
 import express from "express";
+import rateLimit from 'express-rate-limit';
 import { 
   getAllMedia, 
   getOneMedia, 
@@ -28,12 +29,20 @@ import { uploadPhoto } from "../middlewares/upload.js";
 import { authenticate } from "../middlewares/auth.js";
 import { requirePhotographer } from "../middlewares/photographer.js";
 
+const uploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many upload requests, please try again in 15 minutes.' }
+});
+
 const router = express.Router();
 
 // Album routes MUST come before /:id catch-all route
-router.post("/album", authenticate, uploadPhoto.single("coverImage"), createAlbum);
-router.post("/album/bulk-upload", authenticate, uploadPhoto.array("files", 20), bulkUploadAlbumMedia);
-router.post("/bulk-upload", authenticate, uploadPhoto.array("files", 20), bulkUploadAlbumMedia);
+router.post("/album", authenticate, uploadLimiter, uploadPhoto.single("coverImage"), createAlbum);
+router.post("/album/bulk-upload", authenticate, uploadLimiter, uploadPhoto.array("files", 20), bulkUploadAlbumMedia);
+router.post("/bulk-upload", authenticate, uploadLimiter, uploadPhoto.array("files", 20), bulkUploadAlbumMedia);
 router.get("/albums", getAlbums);
 router.get("/album/:albumId", authenticate, getAlbum);
 router.put("/album/:albumId", authenticate, uploadPhoto.single("coverImage"), updateAlbum);
@@ -57,8 +66,8 @@ router.get("/liked", authenticate, getLikedMedia);
 router.post("/:id/like", authenticate, likeMedia);
 router.post("/:id/unlike", authenticate, unlikeMedia);
 
-router.post("/", authenticate, uploadPhoto.single("file"), createMedia);
-router.put("/:id", authenticate, uploadPhoto.single("file"), updateMedia);
+router.post("/", authenticate, uploadLimiter, uploadPhoto.single("file"), createMedia);
+router.put("/:id", authenticate, uploadLimiter, uploadPhoto.single("file"), updateMedia);
 router.put("/:id/price", authenticate, updateMediaPrice);
 router.delete("/:id", authenticate, deleteMedia);
 

@@ -6,6 +6,8 @@ import Receipt from "../models/Receipt.js";
 import MpesaLog from "../models/MpesaLog.js";
 import MpesaRetry from "../models/MpesaRetry.js";
 import User from "../models/users.js";
+import Album from "../models/album.js";
+import Refund from "../models/Refund.js";
 import Wallet from "../models/Wallet.js";
 import emailService from "../services/emailService.js";
 
@@ -885,7 +887,7 @@ async function getMpesaRetries(req, res) {
 
 async function getAdminDashboard(req, res) {
   try {
-    const allPayments = await Payment.find({ status: "completed" })
+    const completedPayments = await Payment.find({ status: "completed" })
       .populate("buyer", "username email")
       .populate("media", "title price photographer")
       .populate({
@@ -893,16 +895,33 @@ async function getAdminDashboard(req, res) {
         populate: { path: 'photographer', select: 'username email' }
       })
       .sort({ createdAt: -1 });
-    
-    const totalRevenue = allPayments.reduce((sum, p) => sum + (p.adminShare || 0), 0);
-    const totalSales = allPayments.length;
-    const totalPhotographerEarnings = allPayments.reduce((sum, p) => sum + (p.photographerShare || 0), 0);
-    
+
+    const totalRevenue = completedPayments.reduce((sum, p) => sum + (p.adminShare || 0), 0);
+    const totalSales = completedPayments.length;
+    const totalPhotographerEarnings = completedPayments.reduce((sum, p) => sum + (p.photographerShare || 0), 0);
+    const totalBuyers = await User.countDocuments({ role: 'user' });
+    const totalPhotographers = await User.countDocuments({ role: 'photographer' });
+    const totalAdmins = await User.countDocuments({ role: 'admin' });
+    const totalMedia = await Media.countDocuments();
+    const totalAlbums = await Album.countDocuments();
+    const pendingRefunds = await Refund.countDocuments({ status: 'pending' });
+    const recentPayments = completedPayments.slice(0, 20);
+
     res.status(200).json({
-      allPayments,
-      totalRevenue,
-      totalSales,
-      totalPhotographerEarnings
+      success: true,
+      stats: {
+        totalRevenue,
+        totalSales,
+        totalPhotographerEarnings,
+        totalBuyers,
+        totalPhotographers,
+        totalAdmins,
+        totalMedia,
+        totalAlbums,
+        pendingRefunds
+      },
+      recentPayments,
+      completedPayments: recentPayments
     });
   } catch (error) {
     console.error("Error fetching admin dashboard:", error);

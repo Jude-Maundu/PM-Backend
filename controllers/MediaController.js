@@ -55,7 +55,16 @@ function normalizeFileUrl(fileUrl) {
 // ==============================
 export async function getAllMedia(req, res) {
   try {
-    const media = await Media.find()
+    const authUserId = extractAuthUserId(req);
+    const isAdmin = req.user?.role === 'admin';
+
+    const query = isAdmin
+      ? {}
+      : authUserId
+        ? { $or: [{ isPrivate: false }, { photographer: authUserId }] }
+        : { isPrivate: false };
+
+    const media = await Media.find(query)
       .populate("photographer", "username email");
 
     // Normalize fileUrl for client consumption (some entries store absolute paths)
@@ -78,6 +87,8 @@ export async function getAllMedia(req, res) {
 export async function getOneMedia(req, res) {
   try {
     const { id } = req.params;
+    const authUserId = extractAuthUserId(req);
+    const isAdmin = req.user?.role === 'admin';
 
     if (!validateObjectId(id)) {
       return normalizeError(res, 400, "Invalid media ID format");
@@ -87,6 +98,11 @@ export async function getOneMedia(req, res) {
       .populate("photographer", "username email");
 
     if (!media) return normalizeError(res, 404, "Media not found");
+
+    const isOwner = String(media.photographer?._id || media.photographer) === String(authUserId);
+    if (media.isPrivate && !isOwner && !isAdmin) {
+      return normalizeError(res, 403, "This media is private");
+    }
 
     const normalized = {
       ...media.toObject(),
@@ -279,7 +295,7 @@ export async function getEventMediaByToken(req, res) {
 // ==============================
 export async function createAlbum(req, res) {
   try {
-    const { name, description, price } = req.body;
+    const { name, description, price, isPrivate } = req.body;
     const photographerId = req.user?.userId;
 
     console.log("[createAlbum] Received request", {
@@ -301,22 +317,30 @@ export async function createAlbum(req, res) {
     // Handle cover image: uploaded file takes priority
     let coverImage = "";
     if (req.file) {
-      // File was uploaded; generate the relative path
-      coverImage = `uploads/photos/${req.file.filename}`;
+      coverImage = req.file.secure_url || req.file.url || req.file.path || req.file.filename || "";
+      if (coverImage && !coverImage.startsWith('http') && !coverImage.startsWith('/')) {
+        coverImage = `/uploads/photos/${coverImage}`;
+      }
       console.log("[createAlbum] Using uploaded file:", coverImage);
     } else if (req.body.coverImage) {
-      // Fallback to URL string from body
       coverImage = req.body.coverImage;
       console.log("[createAlbum] Using URL from body:", coverImage);
     }
 
-    const parsedPrice = Number(price) || 0;
+    const parsedPrice = Number(price ?? 0);
+    if (Number.isNaN(parsedPrice) || parsedPrice < 0) {
+      return res.status(400).json({ message: "Album price must be a valid non-negative number" });
+    }
+
+    const parsedPrivate = String(isPrivate).toLowerCase() === 'true';
+
     const album = await Album.create({
       name,
       description: description || "",
       coverImage,
       price: parsedPrice,
-      photographer: photographerId
+      photographer: photographerId,
+      isPrivate: parsedPrivate
     });
 
     console.log("[createAlbum] Album created successfully", { albumId: album._id, name, photographer: photographerId });
@@ -520,7 +544,7 @@ export async function downloadMedia(req, res) {
 // ==============================
 export async function createMedia(req, res) {
   try {
-    const { title, description, price, mediaType, album } = req.body;
+    const { title, description, price, mediaType, album, isPrivate } = req.body;
     
     // Extract authenticated user ID
     const authUserId = extractAuthUserId(req);
@@ -557,14 +581,22 @@ export async function createMedia(req, res) {
       return res.status(500).json({ message: 'Unable to resolve uploaded media URL' });
     }
 
+    const parsedPrice = Number(price ?? 0);
+    if (Number.isNaN(parsedPrice) || parsedPrice < 0) {
+      return res.status(400).json({ message: "Media price must be a valid non-negative number" });
+    }
+
+    const parsedPrivate = String(isPrivate).toLowerCase() === 'true';
+
     const media = await Media.create({
       title,
       description,
-      price: price || 0,
+      price: parsedPrice,
       fileUrl,
       mediaType,
       album: album || null,
       photographer: authUserId,
+      isPrivate: parsedPrivate,
     });
 
     res.status(201).json(media);
@@ -592,8 +624,9 @@ export async function bulkUploadAlbumMedia(req, res) {
     }
 
     // If album is specified, verify ownership
+    let albumDoc = null;
     if (album) {
-      const albumDoc = await Album.findById(album);
+      albumDoc = await Album.findById(album);
       if (!albumDoc) {
         return res.status(404).json({ message: "Album not found" });
       }
@@ -601,6 +634,14 @@ export async function bulkUploadAlbumMedia(req, res) {
         return res.status(403).json({ message: "You are not authorized to add media to this album" });
       }
     }
+
+    const uploadPrice = Number(req.body.price ?? 0);
+    if (Number.isNaN(uploadPrice) || uploadPrice < 0) {
+      return res.status(400).json({ message: "Uploaded media price must be a valid non-negative number" });
+    }
+
+    const parsedPrivate = String(req.body.isPrivate).toLowerCase() === 'true';
+    const inheritedPrivate = albumDoc?.isPrivate === true;
 
     const uploadedMedia = await Promise.all(req.files.map(async (file) => {
       let fileUrl = file.secure_url || file.url || file.path || file.filename;
@@ -610,13 +651,21 @@ export async function bulkUploadAlbumMedia(req, res) {
 
       const media = await Media.create({
         title: file.originalname || file.filename || "Untitled",
-        description: "",
-        price: 0,
+        description: req.body.description || `Uploaded on ${new Date().toLocaleDateString()}`,
+        price: uploadPrice,
         fileUrl,
         mediaType: file.mimetype?.startsWith("video") ? "video" : "photo",
         album: album || null,
         photographer: authUserId,
+        isPrivate: inheritedPrivate || parsedPrivate,
       });
+
+      if (album) {
+        await Album.findByIdAndUpdate(album, {
+          $push: { media: media._id },
+          $inc: { mediaCount: 1 }
+        });
+      }
 
       return media;
     }));
@@ -683,6 +732,10 @@ export async function updateMedia(req, res) {
       }
     }
 
+    if (updatePayload.isPrivate !== undefined) {
+      updatePayload.isPrivate = String(updatePayload.isPrivate).toLowerCase() === 'true';
+    }
+
     const updatedMedia = await Media.findByIdAndUpdate(req.params.id, updatePayload, { new: true });
 
     res.status(200).json(updatedMedia);
@@ -745,11 +798,12 @@ export async function updateMediaPrice(req, res) {
       return res.status(403).json({ message: "Unauthorized: You don't own this media" });
     }
 
-    if (price < 0) {
-      return res.status(400).json({ message: "Price cannot be negative" });
+    const parsedPrice = Number(price);
+    if (Number.isNaN(parsedPrice) || parsedPrice < 0) {
+      return res.status(400).json({ message: "Price must be a valid non-negative number" });
     }
 
-    media.price = Number(price) || 0;
+    media.price = parsedPrice;
     await media.save();
 
     res.status(200).json({ message: "Price updated", media });
@@ -764,7 +818,16 @@ export async function updateMediaPrice(req, res) {
 // ==============================
 export async function getAlbums(req, res) {
   try {
-    const albums = await Album.find()
+    const authUserId = extractAuthUserId(req);
+    const isAdmin = req.user?.role === 'admin';
+
+    const query = isAdmin
+      ? {}
+      : authUserId
+        ? { $or: [{ isPrivate: false }, { photographer: authUserId }] }
+        : { isPrivate: false };
+
+    const albums = await Album.find(query)
       .populate("photographer", "username profilePicture")
       .sort({ createdAt: -1 });
 
@@ -782,6 +845,7 @@ export async function getAlbum(req, res) {
   try {
     const { albumId } = req.params;
     const authUserId = extractAuthUserId(req);
+    const isAdmin = req.user?.role === 'admin';
 
     const album = await Album.findById(albumId)
       .populate("photographer", "username profilePicture email");
@@ -790,9 +854,9 @@ export async function getAlbum(req, res) {
       return res.status(404).json({ message: "Album not found" });
     }
 
-    // Allow access if user is the photographer or admin
-    if (req.user?.role !== 'admin' && String(album.photographer._id || album.photographer) !== String(authUserId)) {
-      return res.status(403).json({ message: "You are not allowed to view this album" });
+    const isOwner = String(album.photographer._id || album.photographer) === String(authUserId);
+    if (album.isPrivate && !isOwner && !isAdmin) {
+      return res.status(403).json({ message: "This album is private" });
     }
 
     // Get media in this album
@@ -823,15 +887,30 @@ export async function updateAlbum(req, res) {
       return res.status(403).json({ message: "You are not allowed to edit this album" });
     }
 
-    const { name, description, price, coverImage } = req.body;
+    const { name, description, price, coverImage, isPrivate } = req.body;
 
     if (name !== undefined) album.name = name;
     if (description !== undefined) album.description = description;
-    if (price !== undefined) album.price = Number(price) || 0;
+    if (price !== undefined) {
+      const parsedAlbumPrice = Number(price);
+      if (Number.isNaN(parsedAlbumPrice) || parsedAlbumPrice < 0) {
+        return res.status(400).json({ message: "Album price must be a valid non-negative number" });
+      }
+      album.price = parsedAlbumPrice;
+    }
     if (coverImage !== undefined) album.coverImage = coverImage;
+    if (isPrivate !== undefined) {
+      album.isPrivate = String(isPrivate).toLowerCase() === 'true';
+    }
 
     if (req.file) {
-      album.coverImage = `uploads/photos/${req.file.filename}`;
+      let uploadedCover = req.file.secure_url || req.file.url || req.file.path || req.file.filename || "";
+      if (uploadedCover && !uploadedCover.startsWith('http') && !uploadedCover.startsWith('/')) {
+        uploadedCover = `/uploads/photos/${uploadedCover}`;
+      }
+      if (uploadedCover) {
+        album.coverImage = uploadedCover;
+      }
     }
 
     await album.save();

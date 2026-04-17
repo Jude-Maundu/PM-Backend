@@ -86,6 +86,11 @@ const shareTokenSchema = new mongoose.Schema({
   // Metadata
   description: String,
   customMessage: String,
+  shareType: {
+    type: String,
+    enum: ["media", "album"],
+    default: "media"
+  },
   
   // Tracking who the share was sent to
   sentTo: [

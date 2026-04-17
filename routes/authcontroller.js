@@ -1,4 +1,5 @@
 import express from 'express';
+import rateLimit from 'express-rate-limit';
 import passport from '../config/passport.js';
 import {register, login, updatePhotographerPhone, googleAuthCallback, getCurrentUser} from '../controllers/authController.js';
 import { uploadProfile } from '../middlewares/upload.js';
@@ -8,9 +9,17 @@ import { authenticate } from '../middlewares/auth.js';
 
 const router = express.Router();
 
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Too many auth requests, please try again in 15 minutes.' }
+});
+
 // Traditional auth routes
-router.post('/register', uploadProfile.single('profilePicture'), register);
-router.post('/login', login);
+router.post('/register', authLimiter, uploadProfile.single('profilePicture'), register);
+router.post('/login', authLimiter, login);
 router.get('/me', authenticate, getCurrentUser);
 
 // Google OAuth routes - with fallback error handling if credentials not configured

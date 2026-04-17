@@ -14,7 +14,7 @@ const userSchema = new Schema({
     enum: ["admin", "photographer", "user", "institution"],
     default: "user"
   },
-  watermark: { type: String, default: "" }, // Photographer watermark text
+  watermark: { type: String, default: "Relic Snap" }, // Photographer watermark text
   isActive: {
     type: Boolean,
     default: true

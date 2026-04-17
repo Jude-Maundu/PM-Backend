@@ -16,6 +16,8 @@ const mediaSchema = new mongoose.Schema({
   // Comments on this media
   comments: [{ type: mongoose.Schema.Types.ObjectId, ref: "Comment" }],
   commentsCount: { type: Number, default: 0 },
+  // Private content can only be viewed by owner/admin or via share link
+  isPrivate: { type: Boolean, default: false },
   // Denormalized data for quick access
   photographerName: { type: String },
   rating: { type: Number, default: 0 },
