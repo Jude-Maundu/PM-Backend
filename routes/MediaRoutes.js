@@ -31,7 +31,7 @@ import { requirePhotographer } from "../middlewares/photographer.js";
 
 const uploadLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5,
+  max: 30, // 30 uploads per 15 min per IP
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: 'Too many upload requests, please try again in 15 minutes.' }

@@ -54,8 +54,7 @@ if (process.env.TRUST_PROXY === 'true' || process.env.NODE_ENV === 'production')
 app.use(
   cors({
     origin: [
-      "http://localhost:3000",
-      "http://localhost:3001",
+      /^http:\/\/localhost(:[0-9]+)?$/,
       "https://pm-frontend-3buw.onrender.com",
       "https://pm-frontend-f3b6.onrender.com",
       "https://pm-backend-1-u2y3.onrender.com",
@@ -65,6 +64,7 @@ app.use(
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+    optionsSuccessStatus: 200,
   })
 );
 
@@ -74,12 +74,10 @@ app.use(helmet());
 // Rate limiting (after CORS so 429 responses include CORS headers)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  max: 500, // 500 requests per 15 min per IP (SPA pages fire many concurrent requests)
   message: { message: "Too many requests, please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
-  // Trust proxy is already set above, but this ensures rate limiter respects it
-  validate: { trustProxy: false }
 });
 app.use("/api", limiter);
 

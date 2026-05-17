@@ -480,43 +480,46 @@ async function mpesaCallback(req, res) {
 
     if (purchasedMedia.length > 0) {
       console.log(`📥 Updating downloads for ${purchasedMedia.length} items`);
-      
+
       const mediaIdsToUpdate = purchasedMedia.map((m) => m._id);
       await Media.updateMany({ _id: { $in: mediaIdsToUpdate } }, { $inc: { downloads: 1 } });
 
-      const itemsData = purchasedMedia.map((m) => ({ 
-        media: m._id, 
-        title: m.title, 
-        price: m.price, 
-        photographer: m.photographer?._id || m.photographer 
+      const itemsData = purchasedMedia.map((m) => ({
+        media: m._id,
+        title: m.title,
+        price: m.price,
+        photographer: m.photographer?._id || m.photographer
       }));
 
-      await Receipt.create({
-        buyer: payment.buyer._id || payment.buyer,
-        payment: payment._id,
-        items: itemsData,
-        totalAmount: payment.amount,
-        adminShare: payment.adminShare,
-        transactionId: payment.transactionId,
-        method: payment.paymentMethod || "mpesa",
-        receiptNumber: `RCP-${Date.now()}-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
-        status: "completed"
-      });
-
       const Notification = (await import("../models/Notification.js")).default;
-      const buyerId = payment.buyer._id || payment.buyer;
+      const buyerId = payment.buyer?._id || payment.buyer;
 
-      await Notification.create({
-        recipient: buyerId,
-        sender: buyerId,
-        type: "purchase",
-        title: "Payment Successful",
-        message: `Your payment for ${itemsData.length} item(s) is complete.`,
-        data: { paymentId: payment._id },
-        actionUrl: "/buyer/downloads",
-        actionLabel: "View downloads",
-        priority: "high"
-      });
+      // Skip receipt and buyer notification for guest purchases (no buyer account)
+      if (buyerId) {
+        await Receipt.create({
+          buyer: buyerId,
+          payment: payment._id,
+          items: itemsData,
+          totalAmount: payment.amount,
+          adminShare: payment.adminShare,
+          transactionId: payment.transactionId,
+          method: payment.paymentMethod || "mpesa",
+          receiptNumber: `RCP-${Date.now()}-${Math.random().toString(36).substring(2, 9).toUpperCase()}`,
+          status: "completed"
+        });
+
+        await Notification.create({
+          recipient: buyerId,
+          sender: buyerId,
+          type: "purchase",
+          title: "Payment Successful",
+          message: `Your payment for ${itemsData.length} item(s) is complete.`,
+          data: { paymentId: payment._id },
+          actionUrl: "/buyer/downloads",
+          actionLabel: "View downloads",
+          priority: "high"
+        });
+      }
 
       const photographerPayments = new Map();
       for (const media of purchasedMedia) {
@@ -530,16 +533,16 @@ async function mpesaCallback(req, res) {
       for (const [photographerId, amount] of photographerPayments) {
         await Notification.create({
           recipient: photographerId,
-          sender: buyerId,
+          sender: buyerId || photographerId,
           type: "payment",
           title: "Your media was purchased",
-          message: `${payment.buyer?.username || "A buyer"} purchased your media. You earned KES ${amount.toFixed(2)}.`,
+          message: `${payment.buyer?.username || "A guest buyer"} purchased your media. You earned KES ${amount.toFixed(2)}.`,
           data: { paymentId: payment._id },
           actionUrl: "/photographer/sales",
           actionLabel: "View Sales",
           priority: "high"
         });
-        
+
         const photographer = await User.findById(photographerId);
         if (photographer?.phoneNumber && amount > 0) {
           console.log(`💰 Sending B2C payout to photographer ${photographer.username}: KES ${amount.toFixed(2)}`);
@@ -555,8 +558,8 @@ async function mpesaCallback(req, res) {
       }
     }
 
-    if (payment.walletTopup) {
-      console.log(`💰 Processing wallet topup for user ${payment.buyer._id}`);
+    if (payment.walletTopup && payment.buyer) {
+      console.log(`💰 Processing wallet topup for user ${payment.buyer._id || payment.buyer}`);
       let wallet = await Wallet.findOne({ user: payment.buyer._id || payment.buyer });
       if (!wallet) {
         wallet = await Wallet.create({ user: payment.buyer._id || payment.buyer, balance: 0 });

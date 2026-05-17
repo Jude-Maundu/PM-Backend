@@ -4,7 +4,13 @@ const paymentSchema = new mongoose.Schema({
   buyer: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
-    required: true
+    required: false,
+    default: null
+  },
+  // For guest purchases (no account required)
+  guestPhone: {
+    type: String,
+    default: null
   },
   photographer: {
     type: mongoose.Schema.Types.ObjectId,
@@ -44,7 +50,7 @@ const paymentSchema = new mongoose.Schema({
   },
   paymentMethod: {
     type: String,
-    enum: ["mpesa", "mock"],
+    enum: ["mpesa", "wallet", "mock"],
     default: "mpesa"
   },
   checkoutRequestID: String,
