@@ -1,7 +1,7 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import passport from '../config/passport.js';
-import {register, login, updatePhotographerPhone, googleAuthCallback, getCurrentUser} from '../controllers/authController.js';
+import {register, login, updatePhotographerPhone, googleAuthCallback, getCurrentUser, changePassword} from '../controllers/authController.js';
 import { uploadProfile } from '../middlewares/upload.js';
 import { getAllUsers, getUser, updateUser, DeleteUser } from '../controllers/authController.js';
 import { followUser, unfollowUser, getUserFollowers, getUserFollowing, isFollowing } from '../controllers/followController.js';
@@ -56,6 +56,7 @@ router.get('/google/callback', (req, res, next) => {
 router.get('/users', getAllUsers);
 router.get('/users/:id', getUser);
 router.put('/users/:id', uploadProfile.single('profilePicture'), updateUser);
+router.post('/users/:id/change-password', authenticate, changePassword);
 router.put('/photographers/:id/phone', updatePhotographerPhone);
 router.delete('/users/:id', DeleteUser);
 

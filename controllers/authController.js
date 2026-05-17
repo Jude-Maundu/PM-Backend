@@ -191,15 +191,21 @@ async function updateUser(req, res) {
     if (role) {
       user.role = role;
     }
-    if (phoneNumber) {
-      // Validate phone number format (should be 254XXXXXXXXX)
-      const phoneRegex = /^254\d{9}$/;
-      if (!phoneRegex.test(phoneNumber)) {
-        return res.status(400).json({
-          message: "Invalid phone number format. Use 254XXXXXXXXX (e.g., 254712345678)"
-        });
+    if (phoneNumber !== undefined && phoneNumber !== null) {
+      if (phoneNumber === "") {
+        user.phoneNumber = "";
+      } else {
+        // Normalize: strip non-digits, then ensure 254XXXXXXXXX format
+        let digits = String(phoneNumber).replace(/\D/g, "");
+        if (digits.startsWith("0") && digits.length === 10) digits = "254" + digits.slice(1);
+        else if (digits.startsWith("7") && digits.length === 9) digits = "254" + digits;
+        else if (digits.startsWith("254") && digits.length === 12) { /* already correct */ }
+        const phoneRegex = /^254\d{9}$/;
+        if (!phoneRegex.test(digits)) {
+          return res.status(400).json({ message: "Invalid phone number. Use format 0712345678 or 254712345678" });
+        }
+        user.phoneNumber = digits;
       }
-      user.phoneNumber = phoneNumber;
     }
 
     // Handle profile picture upload
@@ -223,6 +229,18 @@ async function updateUser(req, res) {
     }
     if (typeof req.body.bio === 'string') {
       user.bio = req.body.bio;
+    }
+    if (typeof req.body.website === 'string') {
+      user.website = req.body.website;
+    }
+    if (req.body.social && typeof req.body.social === 'object') {
+      user.social = req.body.social;
+    }
+    if (Array.isArray(req.body.skills)) {
+      user.skills = req.body.skills;
+    }
+    if (Array.isArray(req.body.equipment)) {
+      user.equipment = req.body.equipment;
     }
 
     await user.save();
@@ -314,4 +332,29 @@ async function getCurrentUser(req, res) {
   }
 }
 
-export { register, login, getAllUsers, getUser, updateUser, DeleteUser, updatePhotographerPhone, googleAuthCallback, getCurrentUser };
+async function changePassword(req, res) {
+  try {
+    const { id } = req.params;
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: "Current and new password are required" });
+    }
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: "New password must be at least 6 characters" });
+    }
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!user.password) {
+      return res.status(400).json({ message: "Password change is not available for OAuth accounts" });
+    }
+    const match = await bcrypt.compare(currentPassword, user.password);
+    if (!match) return res.status(400).json({ message: "Current password is incorrect" });
+    user.password = await bcrypt.hash(newPassword, 10);
+    await user.save();
+    res.json({ message: "Password changed successfully" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+export { register, login, getAllUsers, getUser, updateUser, DeleteUser, updatePhotographerPhone, googleAuthCallback, getCurrentUser, changePassword };

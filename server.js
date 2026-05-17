@@ -32,6 +32,7 @@ import notificationRoutes from "./routes/notificationRoutes.js";
 import messagingRoutes from "./routes/messagingRoutes.js";
 import mpesaDiagnosticsRoutes from "./routes/mpesaDiagnosticsRoutes.js";
 import withdrawalRoutes from "./routes/withdrawalRoutes.js";
+import portfolioRoutes from "./routes/portfolioRoutes.js";
 import { processPendingB2cRetries } from "./controllers/paymentController.js";
 import emailService from "./services/emailService.js";
 import { initializeSocket } from "./services/socketService.js";
@@ -246,6 +247,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/messages", messagingRoutes);
 app.use("/api/mpesa", mpesaDiagnosticsRoutes);
 app.use("/api/withdrawals", withdrawalRoutes);
+app.use("/api/portfolio", portfolioRoutes);
 
 // ==================== GLOBAL ERROR HANDLER ====================
 app.use((err, req, res, next) => {

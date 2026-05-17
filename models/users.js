@@ -34,6 +34,10 @@ const userSchema = new Schema({
   // Denormalized data for photographers
   location: { type: String, default: "" },
   bio: { type: String, default: "" },
+  website: { type: String, default: "" },
+  social: { type: Object, default: {} },
+  skills: [{ type: String }],
+  equipment: [{ type: String }],
   totalEarnings: { type: Number, default: 0 },
   totalUploads: { type: Number, default: 0 },
   totalDownloads: { type: Number, default: 0 },

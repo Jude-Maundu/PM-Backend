@@ -1,9 +1,9 @@
 import express from "express";
-import { 
-  payWithMpesa, 
-  mpesaCallback, 
-  buyMedia, 
-  getPhotographerEarnings, 
+import {
+  payWithMpesa,
+  mpesaCallback,
+  buyMedia,
+  getPhotographerEarnings,
   getAdminDashboard,
   getPhotographerEarningsSummary,
   getPurchaseHistory,
@@ -13,6 +13,9 @@ import {
 } from "../controllers/paymentController.js";
 import { authenticate } from "../middlewares/auth.js";
 import { requireAdmin } from "../middlewares/admin.js";
+import Album from "../models/album.js";
+import Wallet from "../models/Wallet.js";
+import User from "../models/users.js";
 import {
   getCart,
   addToCart,
@@ -145,5 +148,94 @@ router.get("/admin/refunds", authenticate, requireAdmin, getAllRefunds);
 router.get("/wallet/:userId", getWalletBalance);
 router.get("/transactions/:userId", getTransactions);
 router.post("/wallet/add", addFundsToWallet);
+
+// ============================================
+// ALBUM PURCHASE (wallet-based)
+// ============================================
+router.post("/album/:albumId/buy", authenticate, async (req, res) => {
+  try {
+    const { albumId } = req.params;
+    const buyerId = req.user?.userId || req.user?.id || req.user?._id;
+
+    const album = await Album.findById(albumId).populate("photographer", "username email");
+    if (!album) return res.status(404).json({ message: "Album not found" });
+
+    if (album.price <= 0) {
+      return res.status(400).json({ message: "This album is free — no purchase needed" });
+    }
+
+    // Check if already purchased
+    if (album.purchasedBy.map(id => id.toString()).includes(buyerId.toString())) {
+      return res.status(400).json({ message: "You have already purchased this album" });
+    }
+
+    // Get buyer wallet
+    let buyerWallet = await Wallet.findOne({ user: buyerId });
+    if (!buyerWallet || buyerWallet.balance < album.price) {
+      return res.status(402).json({ message: `Insufficient wallet balance. You need KES ${album.price} but have KES ${buyerWallet?.balance || 0}` });
+    }
+
+    const platformFee = Math.round(album.price * 0.3 * 100) / 100;
+    const photographerEarning = album.price - platformFee;
+
+    // Deduct from buyer wallet
+    buyerWallet.balance -= album.price;
+    buyerWallet.transactions.push({
+      type: "debit",
+      amount: album.price,
+      description: `Album purchase: ${album.name}`,
+      reference: `ALB-${albumId}`,
+      createdAt: new Date(),
+    });
+    await buyerWallet.save();
+
+    // Credit photographer wallet
+    let photographerWallet = await Wallet.findOne({ user: album.photographer._id });
+    if (!photographerWallet) {
+      photographerWallet = new Wallet({ user: album.photographer._id, balance: 0, transactions: [] });
+    }
+    photographerWallet.balance += photographerEarning;
+    photographerWallet.transactions.push({
+      type: "credit",
+      amount: photographerEarning,
+      description: `Album sale: ${album.name}`,
+      reference: `ALB-${albumId}`,
+      createdAt: new Date(),
+    });
+    await photographerWallet.save();
+
+    // Update photographer earnings
+    await User.findByIdAndUpdate(album.photographer._id, { $inc: { totalEarnings: photographerEarning } });
+
+    // Mark album as purchased by buyer
+    album.purchasedBy.push(buyerId);
+    await album.save();
+
+    res.json({
+      success: true,
+      message: `Album "${album.name}" purchased successfully`,
+      albumId,
+      amountPaid: album.price,
+      newBalance: buyerWallet.balance,
+    });
+  } catch (err) {
+    console.error("Album purchase error:", err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// Check if buyer has purchased an album
+router.get("/album/:albumId/purchased", authenticate, async (req, res) => {
+  try {
+    const { albumId } = req.params;
+    const buyerId = req.user?.userId || req.user?.id || req.user?._id;
+    const album = await Album.findById(albumId).select("purchasedBy price");
+    if (!album) return res.status(404).json({ message: "Album not found" });
+    const purchased = album.purchasedBy.map(id => id.toString()).includes(buyerId.toString());
+    res.json({ purchased, price: album.price });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 
 export default router;

@@ -44,6 +44,17 @@ router.post("/album", authenticate, uploadLimiter, uploadPhoto.single("coverImag
 router.post("/album/bulk-upload", authenticate, uploadLimiter, uploadPhoto.array("files", 20), bulkUploadAlbumMedia);
 router.post("/bulk-upload", authenticate, uploadLimiter, uploadPhoto.array("files", 20), bulkUploadAlbumMedia);
 router.get("/albums", getAlbums);
+router.get("/albums/public", async (req, res) => {
+  try {
+    const albums = await (await import("../models/album.js")).default
+      .find({ isPrivate: { $ne: true } })
+      .populate("photographer", "username email profilePicture")
+      .sort({ createdAt: -1 });
+    res.json({ success: true, albums });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 router.get("/album/:albumId", authenticate, getAlbum);
 router.put("/album/:albumId", authenticate, uploadPhoto.single("coverImage"), updateAlbum);
 router.delete("/album/:albumId", authenticate, deleteAlbum);
