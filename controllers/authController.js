@@ -38,6 +38,15 @@ async function register(req, res) {
       profilePicture = `uploads/profiles/${req.file.filename}`;
     }
 
+    // Resolve referral code if provided
+    let referredByUserId = null;
+    if (req.body.referralCode) {
+      const referrer = await User.findOne({ referralCode: req.body.referralCode });
+      if (referrer) {
+        referredByUserId = referrer._id;
+      }
+    }
+
     // Create new user with role
     const newUser = await User.create({
       username,
@@ -47,6 +56,7 @@ async function register(req, res) {
       phoneNumber: phoneNumber || "",
       role: role || "user",
       watermark: req.body.watermark || DEFAULT_WATERMARK,
+      ...(referredByUserId ? { referredBy: referredByUserId } : {}),
     });
 
     // Send welcome email

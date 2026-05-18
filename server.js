@@ -33,6 +33,9 @@ import messagingRoutes from "./routes/messagingRoutes.js";
 import mpesaDiagnosticsRoutes from "./routes/mpesaDiagnosticsRoutes.js";
 import withdrawalRoutes from "./routes/withdrawalRoutes.js";
 import portfolioRoutes from "./routes/portfolioRoutes.js";
+import reviewRoutes from "./routes/reviewRoutes.js";
+import referralRoutes from "./routes/referralRoutes.js";
+import proofingRoutes from "./routes/proofingRoutes.js";
 import { processPendingB2cRetries } from "./controllers/paymentController.js";
 import emailService from "./services/emailService.js";
 import { initializeSocket } from "./services/socketService.js";
@@ -248,6 +251,9 @@ app.use("/api/messages", messagingRoutes);
 app.use("/api/mpesa", mpesaDiagnosticsRoutes);
 app.use("/api/withdrawals", withdrawalRoutes);
 app.use("/api/portfolio", portfolioRoutes);
+app.use("/api/reviews", reviewRoutes);
+app.use("/api/referral", referralRoutes);
+app.use("/api/proofing", proofingRoutes);
 
 // ==================== GLOBAL ERROR HANDLER ====================
 app.use((err, req, res, next) => {

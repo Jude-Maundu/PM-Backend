@@ -67,4 +67,21 @@ router.get('/users/:userId/followers', getUserFollowers);
 router.get('/users/:userId/following', getUserFollowing);
 router.get('/users/:userId/is-following', authenticate, isFollowing);
 
+// GET /api/auth/photographers/related/:id
+router.get("/photographers/related/:id", async (req, res) => {
+  try {
+    const User = (await import("../models/users.js")).default;
+    const source = await User.findById(req.params.id).select("location skills");
+    const related = await User.find({
+      _id: { $ne: req.params.id },
+      role: "photographer",
+      $or: [
+        { location: source?.location },
+        { skills: { $in: source?.skills || [] } },
+      ],
+    }).select("username profilePicture bio location isVerified").limit(4);
+    res.json({ success: true, photographers: related });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
 export default router;

@@ -104,6 +104,9 @@ export async function getOneMedia(req, res) {
       return normalizeError(res, 403, "This media is private");
     }
 
+    // Increment view count (fire-and-forget, don't await to keep response fast)
+    Media.findByIdAndUpdate(id, { $inc: { viewCount: 1 } }).catch(() => {});
+
     const normalized = {
       ...media.toObject(),
       fileUrl: normalizeFileUrl(media.fileUrl)
@@ -1017,6 +1020,78 @@ export async function unlikeMedia(req, res) {
   } catch (error) {
     console.error("Error unliking media:", error);
     res.status(500).json({ message: "Error unliking media", error: error.message });
+  }
+}
+
+// ==============================
+// Get trending media (sorted by viewCount)
+// ==============================
+export async function getTrendingMedia(req, res) {
+  try {
+    const { limit = 20 } = req.query;
+    const trending = await Media.find({ isPrivate: { $ne: true } })
+      .sort({ viewCount: -1, createdAt: -1 })
+      .limit(parseInt(limit))
+      .populate("photographer", "username profilePicture");
+    res.json({ success: true, media: trending });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+}
+
+// ==============================
+// Get similar media (same photographer / category / tags)
+// ==============================
+export async function getSimilarMedia(req, res) {
+  try {
+    const { id } = req.params;
+    const source = await Media.findById(id).select("photographer tags category");
+    if (!source) return res.status(404).json({ message: "Media not found" });
+    const similar = await Media.find({
+      _id: { $ne: id },
+      $or: [
+        { photographer: source.photographer },
+        { category: source.category },
+        ...(source.tags?.length ? [{ tags: { $in: source.tags } }] : []),
+      ],
+    })
+      .limit(8)
+      .populate("photographer", "username profilePicture");
+    res.json({ success: true, media: similar });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+}
+
+// ==============================
+// Get media by category with filtering & sorting
+// ==============================
+export async function getMediaByCategory(req, res) {
+  try {
+    const { category } = req.params;
+    const { search, minPrice, maxPrice, license, sort = "newest", limit = 40 } = req.query;
+    const query = {};
+    if (category && category !== "all") query.category = category;
+    if (search) query.$or = [
+      { title: { $regex: search, $options: "i" } },
+      { tags: { $regex: search, $options: "i" } },
+      { description: { $regex: search, $options: "i" } },
+    ];
+    if (minPrice !== undefined) query.price = { ...query.price, $gte: parseFloat(minPrice) };
+    if (maxPrice !== undefined) query.price = { ...query.price, $lte: parseFloat(maxPrice) };
+    if (license) query.licenseType = license;
+    const sortObj =
+      sort === "popular" ? { viewCount: -1 } :
+      sort === "price_asc" ? { price: 1 } :
+      sort === "price_desc" ? { price: -1 } :
+      { createdAt: -1 };
+    const media = await Media.find(query)
+      .sort(sortObj)
+      .limit(parseInt(limit))
+      .populate("photographer", "username profilePicture");
+    res.json({ success: true, media, total: media.length });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 }
 

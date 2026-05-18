@@ -1,11 +1,11 @@
 import express from "express";
 import rateLimit from 'express-rate-limit';
-import { 
-  getAllMedia, 
-  getOneMedia, 
-  getMyMedia, 
-  createMedia, 
-  updateMedia, 
+import {
+  getAllMedia,
+  getOneMedia,
+  getMyMedia,
+  createMedia,
+  updateMedia,
   deleteMedia,
   getProtectedMedia,
   downloadMedia,
@@ -21,7 +21,10 @@ import {
   likeMedia,
   unlikeMedia,
   getLikedMedia,
-  bulkUploadAlbumMedia
+  bulkUploadAlbumMedia,
+  getTrendingMedia,
+  getSimilarMedia,
+  getMediaByCategory
 } from "../controllers/MediaController.js";
 import { addMediaToAlbum, removeMediaFromAlbum, getAlbumMedia } from "../controllers/albumController.js";
  
@@ -69,6 +72,10 @@ router.get("/album/:albumId/access/:token", getEventMediaByToken);
 // Media routes
 router.get("/", getAllMedia);
 router.get("/mine", authenticate, getMyMedia);
+router.get("/trending", getTrendingMedia);
+router.get("/filter/:category", getMediaByCategory);
+router.get("/filter", getMediaByCategory);
+router.get("/:id/similar", getSimilarMedia);
 router.get("/:id", getOneMedia);
 router.get("/:id/protected", authenticate, getProtectedMedia);
 router.get("/:id/download", authenticate, downloadMedia);

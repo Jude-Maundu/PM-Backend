@@ -41,6 +41,10 @@ const userSchema = new Schema({
   totalEarnings: { type: Number, default: 0 },
   totalUploads: { type: Number, default: 0 },
   totalDownloads: { type: Number, default: 0 },
+  // Referral system
+  referralCode: { type: String, unique: true, sparse: true },
+  referredBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  referralEarnings: { type: Number, default: 0 },
 }, { timestamps: true });
 
 // Indexes for common queries

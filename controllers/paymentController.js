@@ -10,6 +10,7 @@ import Album from "../models/album.js";
 import Refund from "../models/Refund.js";
 import Wallet from "../models/Wallet.js";
 import emailService from "../services/emailService.js";
+import { emitToUser } from "../services/socketService.js";
 
 const consumerKey = process.env.MPESA_CONSUMER_KEY;
 const consumerSecret = process.env.MPESA_SECRET_KEY;
@@ -494,6 +495,41 @@ async function mpesaCallback(req, res) {
       const Notification = (await import("../models/Notification.js")).default;
       const buyerId = payment.buyer?._id || payment.buyer;
 
+      // Send purchase confirmation email to buyer (for single-media purchases only, to avoid spamming on cart)
+      if (payment.buyer?.email && purchasedMedia.length === 1) {
+        try {
+          const purchasedItem = purchasedMedia[0];
+          await emailService.sendEmail(
+            payment.buyer.email,
+            "Purchase Successful - Relic Snap",
+            `<p>Hi ${payment.buyer.username || "there"},</p>
+             <p>Your purchase of <strong>${purchasedItem.title}</strong> was successful.</p>
+             <p><strong>Amount:</strong> KES ${payment.amount}</p>
+             <p>You can download your photo from the Downloads section in your account.</p>
+             <p>Thank you for using Relic Snap!</p>`
+          );
+        } catch (emailErr) {
+          console.error("⚠️ Failed to send purchase email:", emailErr.message);
+        }
+      } else if (payment.buyer?.email && purchasedMedia.length > 1) {
+        // Cart purchase — send a summary email
+        try {
+          const itemList = purchasedMedia.map((m) => `<li>${m.title}</li>`).join("");
+          await emailService.sendEmail(
+            payment.buyer.email,
+            "Cart Purchase Successful - Relic Snap",
+            `<p>Hi ${payment.buyer.username || "there"},</p>
+             <p>Your cart purchase was successful. Items purchased:</p>
+             <ul>${itemList}</ul>
+             <p><strong>Total Amount:</strong> KES ${payment.amount}</p>
+             <p>You can download your photos from the Downloads section in your account.</p>
+             <p>Thank you for using Relic Snap!</p>`
+          );
+        } catch (emailErr) {
+          console.error("⚠️ Failed to send cart purchase email:", emailErr.message);
+        }
+      }
+
       // Skip receipt and buyer notification for guest purchases (no buyer account)
       if (buyerId) {
         await Receipt.create({
@@ -666,6 +702,35 @@ async function buyMedia(req, res) {
         actionLabel: "View Sale",
         priority: "high"
       });
+    }
+
+    // Emit real-time sale notification to photographer via Socket.IO
+    if (media.photographer) {
+      const photographerId = (media.photographer._id || media.photographer).toString();
+      emitToUser(photographerId, "notification", {
+        type: "sale",
+        message: `Someone purchased your photo '${media.title}'!`,
+        amount: price,
+        mediaId: media._id,
+        buyerUsername: buyer.username || "A user",
+      });
+    }
+
+    // Send purchase confirmation email to buyer
+    try {
+      if (buyer.email) {
+        await emailService.sendEmail(
+          buyer.email,
+          "Purchase Successful - Relic Snap",
+          `<p>Hi ${buyer.username || "there"},</p>
+           <p>Your purchase of <strong>${media.title}</strong> was successful.</p>
+           <p><strong>Amount:</strong> KES ${price}</p>
+           <p>You can download your photo from the Downloads section in your account.</p>
+           <p>Thank you for using Relic Snap!</p>`
+        );
+      }
+    } catch (emailErr) {
+      console.error("⚠️ Failed to send purchase email:", emailErr.message);
     }
 
     return res.status(201).json({ success: true, message: "Purchase completed", payment });

@@ -21,6 +21,27 @@ const mediaSchema = new mongoose.Schema({
   // Denormalized data for quick access
   photographerName: { type: String },
   rating: { type: Number, default: 0 },
+  // Discoverability & licensing fields
+  tags: [{ type: String }],
+  category: {
+    type: String,
+    default: "general",
+    enum: ["general", "wedding", "nature", "portrait", "urban", "travel", "wildlife", "architecture", "sports", "food", "fashion", "abstract"]
+  },
+  licenseType: {
+    type: String,
+    default: "personal",
+    enum: ["personal", "commercial", "editorial"]
+  },
+  viewCount: { type: Number, default: 0 },
+  isApproved: { type: Boolean, default: true },
+  isFlagged: { type: Boolean, default: false },
+  flagReason: { type: String, default: "" },
+  dominantColor: {
+    type: String,
+    default: "none",
+    enum: ["none", "red", "orange", "yellow", "green", "blue", "purple", "pink", "brown", "black", "white", "grey"]
+  },
 }, { timestamps: true });
 
 // Create indexes for common queries
