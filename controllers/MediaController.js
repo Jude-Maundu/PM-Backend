@@ -6,6 +6,14 @@ import Payment from "../models/Payment.js";
 import User from "../models/users.js";
 import Favorite from "../models/Favorite.js";
 
+function buildWatermarkedUrl(originalUrl, watermarkText) {
+  if (!originalUrl || !originalUrl.includes('cloudinary.com/')) return "";
+  if (!watermarkText || !watermarkText.trim()) return "";
+  const safeText = watermarkText.trim().replace(/[^\w\s]/g, "").replace(/\s+/g, "_");
+  const transform = `l_text:Arial_28_bold:${safeText},o_55,g_south_east,co_white,x_12,y_12`;
+  return originalUrl.replace('/upload/', `/upload/${transform}/`);
+}
+
 function normalizeError(res, statusCode, message) {
   return res.status(statusCode).json({ success: false, message });
 }
@@ -591,11 +599,16 @@ export async function createMedia(req, res) {
 
     const parsedPrivate = String(isPrivate).toLowerCase() === 'true';
 
+    const photographer = await User.findById(authUserId).select("watermark username").lean();
+    const watermarkText = photographer?.watermark || photographer?.username || "";
+    const watermarkedUrl = buildWatermarkedUrl(fileUrl, watermarkText);
+
     const media = await Media.create({
       title,
       description,
       price: parsedPrice,
       fileUrl,
+      watermarkedUrl,
       mediaType,
       album: album || null,
       photographer: authUserId,
@@ -646,17 +659,23 @@ export async function bulkUploadAlbumMedia(req, res) {
     const parsedPrivate = String(req.body.isPrivate).toLowerCase() === 'true';
     const inheritedPrivate = albumDoc?.isPrivate === true;
 
+    const photographer = await User.findById(authUserId).select("watermark username").lean();
+    const watermarkText = photographer?.watermark || photographer?.username || "";
+
     const uploadedMedia = await Promise.all(req.files.map(async (file) => {
       let fileUrl = file.secure_url || file.url || file.path || file.filename;
       if (fileUrl && !fileUrl.startsWith("http") && !fileUrl.startsWith("/")) {
         fileUrl = `/uploads/photos/${fileUrl}`;
       }
 
+      const watermarkedUrl = buildWatermarkedUrl(fileUrl, watermarkText);
+
       const media = await Media.create({
         title: file.originalname || file.filename || "Untitled",
         description: req.body.description || `Uploaded on ${new Date().toLocaleDateString()}`,
         price: uploadPrice,
         fileUrl,
+        watermarkedUrl,
         mediaType: file.mimetype?.startsWith("video") ? "video" : "photo",
         album: album || null,
         photographer: authUserId,
@@ -1092,6 +1111,79 @@ export async function getMediaByCategory(req, res) {
     res.json({ success: true, media, total: media.length });
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+}
+
+// ==============================
+// Face Search (AWS Rekognition)
+// ==============================
+export async function faceSearch(req, res) {
+  // Graceful fallback when AWS is not configured
+  const awsKeyId = process.env.AWS_ACCESS_KEY_ID;
+  const awsSecret = process.env.AWS_SECRET_ACCESS_KEY;
+
+  if (!awsKeyId || !awsSecret) {
+    return res.status(200).json({
+      success: false,
+      message: 'Face search not yet available',
+      available: false
+    });
+  }
+
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No selfie file uploaded' });
+    }
+
+    // Dynamically import to avoid top-level errors when AWS SDK isn't needed
+    const { RekognitionClient, SearchFacesByImageCommand } = await import('@aws-sdk/client-rekognition');
+
+    const client = new RekognitionClient({
+      region: process.env.AWS_REGION || 'us-east-1',
+      credentials: {
+        accessKeyId: awsKeyId,
+        secretAccessKey: awsSecret
+      }
+    });
+
+    const imageBytes = req.file.buffer;
+    if (!imageBytes || imageBytes.length === 0) {
+      return res.status(400).json({ success: false, message: 'Uploaded file is empty or unreadable' });
+    }
+
+    const command = new SearchFacesByImageCommand({
+      CollectionId: 'relicsnap-faces',
+      Image: { Bytes: imageBytes },
+      MaxFaces: 20,
+      FaceMatchThreshold: 80
+    });
+
+    const data = await client.send(command);
+
+    const matchedMediaIds = (data.FaceMatches || []).map((match) => ({
+      mediaId: match.Face?.ExternalImageId,
+      similarity: match.Similarity,
+      faceId: match.Face?.FaceId
+    })).filter((m) => m.mediaId);
+
+    return res.status(200).json({
+      success: true,
+      available: true,
+      matches: matchedMediaIds,
+      total: matchedMediaIds.length
+    });
+
+  } catch (error) {
+    console.error('[faceSearch] Error:', error.message);
+    // Surface collection-not-found as a clear message
+    if (error.name === 'ResourceNotFoundException') {
+      return res.status(404).json({
+        success: false,
+        message: 'Face collection not found. Please set up the Rekognition collection.',
+        available: true
+      });
+    }
+    return res.status(500).json({ success: false, message: error.message });
   }
 }
 

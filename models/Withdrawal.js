@@ -11,7 +11,7 @@ const withdrawalSchema = new Schema({
   amount: {
     type: Number,
     required: true,
-    min: 1000 // Minimum withdrawal amount
+    min: 1 // Schema floor; manual request minimum (KES 1,000) is enforced in the controller
   },
   method: {
     type: String,
@@ -36,6 +36,10 @@ const withdrawalSchema = new Schema({
     type: String,
     enum: ['pending', 'processing', 'completed', 'failed'],
     default: 'pending'
+  },
+  isAutomatic: {
+    type: Boolean,
+    default: false
   },
   reference: {
     type: String,

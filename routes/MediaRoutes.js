@@ -1,5 +1,6 @@
 import express from "express";
 import rateLimit from 'express-rate-limit';
+import multer from 'multer';
 import {
   getAllMedia,
   getOneMedia,
@@ -24,13 +25,20 @@ import {
   bulkUploadAlbumMedia,
   getTrendingMedia,
   getSimilarMedia,
-  getMediaByCategory
+  getMediaByCategory,
+  faceSearch
 } from "../controllers/MediaController.js";
 import { addMediaToAlbum, removeMediaFromAlbum, getAlbumMedia } from "../controllers/albumController.js";
- 
+
 import { uploadPhoto } from "../middlewares/upload.js";
 import { authenticate } from "../middlewares/auth.js";
 import { requirePhotographer } from "../middlewares/photographer.js";
+
+// Memory-storage multer for face search (Rekognition needs raw bytes via req.file.buffer)
+const memoryUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 } // 5 MB cap for selfie images
+});
 
 const uploadLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -58,6 +66,21 @@ router.get("/albums/public", async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+router.get("/album/:albumId/public", async (req, res) => {
+  try {
+    const Album = (await import("../models/album.js")).default;
+    const Media = (await import("../models/media.js")).default;
+    const album = await Album.findById(req.params.albumId)
+      .populate("photographer", "username profilePicture watermark");
+    if (!album || album.isPrivate) return res.status(404).json({ message: "Gallery not found" });
+    const media = await Media.find({ album: album._id, isPrivate: false, isApproved: true })
+      .select("title price fileUrl watermarkedUrl mediaType _id")
+      .sort({ createdAt: -1 });
+    res.json({ success: true, album, media });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 router.get("/album/:albumId", authenticate, getAlbum);
 router.put("/album/:albumId", authenticate, uploadPhoto.single("coverImage"), updateAlbum);
 router.delete("/album/:albumId", authenticate, deleteAlbum);
@@ -68,6 +91,9 @@ router.get("/album/:albumId/media", authenticate, getAlbumMedia);
 router.post("/album/:albumId/access", authenticate, createEventAccess);
 router.get("/album/:albumId/access", authenticate, createEventAccess);
 router.get("/album/:albumId/access/:token", getEventMediaByToken);
+
+// Face search route — must be before /:id catch-all
+router.post("/face-search", authenticate, memoryUpload.single("selfie"), faceSearch);
 
 // Media routes
 router.get("/", getAllMedia);

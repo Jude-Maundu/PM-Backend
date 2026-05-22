@@ -39,6 +39,7 @@ import proofingRoutes from "./routes/proofingRoutes.js";
 import { processPendingB2cRetries } from "./controllers/paymentController.js";
 import emailService from "./services/emailService.js";
 import { initializeSocket } from "./services/socketService.js";
+import { startAutoPayout } from "./jobs/autoPayout.js";
 
 console.log("✅ Admin settings router imported", !!adminSettingsRouter);
 console.log("✅ User routes router imported", !!userRoutes);
@@ -324,6 +325,9 @@ async function startServer() {
     }, 1000 * 60); // every 1 minute
 
     console.log(`⏳ MPesa retry worker started (every 60 sec)`);
+
+    // Start daily auto-payout cron job
+    startAutoPayout();
   });
 }
 
