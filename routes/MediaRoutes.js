@@ -54,7 +54,7 @@ const router = express.Router();
 router.post("/album", authenticate, uploadLimiter, uploadPhoto.single("coverImage"), createAlbum);
 router.post("/album/bulk-upload", authenticate, uploadLimiter, uploadPhoto.array("files", 20), bulkUploadAlbumMedia);
 router.post("/bulk-upload", authenticate, uploadLimiter, uploadPhoto.array("files", 20), bulkUploadAlbumMedia);
-router.get("/albums", getAlbums);
+router.get("/albums", authenticate, getAlbums);
 router.get("/albums/public", async (req, res) => {
   try {
     const albums = await (await import("../models/album.js")).default

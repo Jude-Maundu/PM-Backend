@@ -841,13 +841,10 @@ export async function updateMediaPrice(req, res) {
 export async function getAlbums(req, res) {
   try {
     const authUserId = extractAuthUserId(req);
-    const isAdmin = req.user?.role === 'admin';
+    if (!authUserId) return res.status(401).json({ message: "Unauthorized" });
 
-    const query = isAdmin
-      ? {}
-      : authUserId
-        ? { $or: [{ isPrivate: false }, { photographer: authUserId }] }
-        : { isPrivate: false };
+    const isAdmin = req.user?.role === 'admin';
+    const query = isAdmin ? {} : { photographer: authUserId };
 
     const albums = await Album.find(query)
       .populate("photographer", "username profilePicture")
