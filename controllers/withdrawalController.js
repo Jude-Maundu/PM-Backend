@@ -14,8 +14,8 @@ export async function requestWithdrawal(req, res) {
 
     if (!photographerId) return res.status(401).json({ message: 'Authentication required' });
 
-    if (!amount || Number(amount) < 1000) {
-      return res.status(400).json({ message: 'Minimum withdrawal amount is KES 1,000' });
+    if (!amount || Number(amount) < 1) {
+      return res.status(400).json({ message: 'Invalid withdrawal amount' });
     }
 
     const photographer = await User.findById(photographerId);
