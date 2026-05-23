@@ -45,9 +45,11 @@ router.get('/google/callback', (req, res, next) => {
     });
   }
   // If configured, use Passport
-  passport.authenticate('google', { failureRedirect: '/login' }, (err, user, info) => {
+  passport.authenticate('google', (err, user, info) => {
     if (err) return next(err);
-    if (!user) return res.redirect('/login?error=auth_failed');
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    if (!user) return res.redirect(`${frontendUrl}/login?error=auth_failed`);
+    req.user = user; // custom callbacks don't set req.user automatically
     googleAuthCallback(req, res, next);
   })(req, res, next);
 });

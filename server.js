@@ -95,6 +95,10 @@ app.use(
     cookie: {
       secure: process.env.NODE_ENV === 'production',
       httpOnly: true,
+      // SameSite=none is required so the session cookie is sent when Google
+      // redirects back to the callback URL (cross-site top-level navigation).
+      // SameSite=none requires Secure=true (already set in production).
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       maxAge: 24 * 60 * 60 * 1000 // 24 hours
     }
   })
