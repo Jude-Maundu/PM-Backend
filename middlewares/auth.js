@@ -59,7 +59,7 @@ export async function authenticate(req, res, next) {
           const dbUser = await User.findById(userId).select('tokenVersion isBanned').lean();
           if (!dbUser) return res.status(401).json({ success: false, message: "User not found" });
           if (dbUser.isBanned) return res.status(403).json({ success: false, message: "Account suspended" });
-          if (dbUser.tokenVersion !== payload.tokenVersion) {
+          if ((dbUser.tokenVersion ?? 0) !== payload.tokenVersion) {
             return res.status(401).json({ success: false, message: "Session expired, please log in again" });
           }
         } catch (_) { /* DB unavailable — skip version check in dev */ }
