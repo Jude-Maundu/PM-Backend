@@ -168,7 +168,7 @@ async function getAccessToken() {
   }
 }
 
-async function sendMoneyToPhotographer(req, phoneNumber, amount, reference, description, payment = null) {
+async function sendMoneyToPhotographer(req, phoneNumber, amount, reference, description, payment = null, callbackOverrides = {}) {
   try {
     if (!phoneNumber) {
       console.warn("⚠️ Photographer phone number not set, skipping B2C payment");
@@ -193,8 +193,8 @@ async function sendMoneyToPhotographer(req, phoneNumber, amount, reference, desc
       PartyA: shortCode,
       PartyB: phoneNumber,
       Remarks: description,
-      QueueTimeOutURL: `${baseUrl}/b2c-timeout`,
-      ResultURL: `${baseUrl}/b2c-callback`,
+      QueueTimeOutURL: callbackOverrides.timeoutUrl || `${baseUrl}/api/withdrawals/b2c-timeout`,
+      ResultURL: callbackOverrides.resultUrl  || `${baseUrl}/api/withdrawals/b2c-callback`,
       Occasion: reference
     };
 
@@ -675,6 +675,25 @@ async function buyMedia(req, res) {
     });
 
     await Media.findByIdAndUpdate(mediaId, { $inc: { downloads: 1 } });
+
+    // Credit photographer wallet with their share
+    if (media.photographer) {
+      const photographerId = media.photographer._id || media.photographer;
+      let photographerWallet = await Wallet.findOne({ user: photographerId });
+      if (!photographerWallet) {
+        photographerWallet = await Wallet.create({ user: photographerId, balance: 0, transactions: [] });
+      }
+      photographerWallet.balance = Number((photographerWallet.balance + photographerShare).toFixed(2));
+      photographerWallet.transactions = photographerWallet.transactions || [];
+      photographerWallet.transactions.push({
+        type: 'credit',
+        amount: photographerShare,
+        description: `Sale — ${media.title}`,
+        reference: payment.transactionId,
+        createdAt: new Date(),
+      });
+      await photographerWallet.save();
+    }
 
     const Notification = (await import("../models/Notification.js")).default;
 

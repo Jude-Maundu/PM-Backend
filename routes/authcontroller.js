@@ -86,4 +86,36 @@ router.get("/photographers/related/:id", async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
+// ==================== PHOTOGRAPHER APPLICATIONS (user-facing) ====================
+
+router.post('/apply-photographer', authenticate, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id || req.user?._id;
+    const user = await (await import('../models/users.js')).default.findById(userId);
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (user.role === 'photographer') return res.status(400).json({ message: 'You are already a photographer' });
+
+    const PhotographerApplication = (await import('../models/PhotographerApplication.js')).default;
+    const existing = await PhotographerApplication.findOne({ user: userId, status: 'pending' });
+    if (existing) return res.status(409).json({ message: 'You already have a pending application' });
+
+    const { portfolio, experience, specialization, equipment, message } = req.body;
+    const app = await PhotographerApplication.create({ user: userId, portfolio, experience, specialization, equipment, message });
+    res.status(201).json({ success: true, message: 'Application submitted! You will be notified once reviewed.', application: app });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+router.get('/my-application', authenticate, async (req, res) => {
+  try {
+    const userId = req.user?.userId || req.user?.id || req.user?._id;
+    const PhotographerApplication = (await import('../models/PhotographerApplication.js')).default;
+    const app = await PhotographerApplication.findOne({ user: userId }).sort({ createdAt: -1 });
+    res.json({ success: true, application: app || null });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 export default router;

@@ -1,6 +1,9 @@
 import express from "express";
+import bcrypt from "bcrypt";
+import os from "os";
 import { authenticate } from "../middlewares/auth.js";
 import { requireAdmin } from "../middlewares/admin.js";
+import { requireReviewer, requireSupport, logAdminAction } from "../middlewares/staff.js";
 import {
   getAllMediaAdmin,
   getAllAlbumsAdmin,
@@ -14,6 +17,9 @@ import { getAllWithdrawals, processWithdrawal } from "../controllers/withdrawalC
 import User from "../models/users.js";
 import ShareToken from "../models/ShareToken.js";
 import Wallet from "../models/Wallet.js";
+import AdminLog from "../models/AdminLog.js";
+import SystemConfig from "../models/SystemConfig.js";
+import PhotographerApplication from "../models/PhotographerApplication.js";
 
 const router = express.Router();
 
@@ -299,6 +305,325 @@ router.get("/export/transactions", async (req, res) => {
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", "attachment; filename=transactions.csv");
     res.send(header + rows);
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// ==================== HEALTH DASHBOARD ====================
+
+router.get("/health", async (req, res) => {
+  try {
+    const Payment   = (await import("../models/Payment.js")).default;
+    const Withdrawal = (await import("../models/Withdrawal.js")).default;
+    const Media      = (await import("../models/media.js")).default;
+
+    const now       = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekStart  = new Date(now - 7 * 24 * 60 * 60 * 1000);
+
+    const [
+      salesToday,
+      salesWeek,
+      pendingWithdrawals,
+      pendingWithdrawalAmount,
+      pendingMediaCount,
+      pendingApplications,
+      failedWithdrawals,
+      totalUsers,
+      bannedUsers,
+    ] = await Promise.all([
+      Payment.aggregate([{ $match: { status: 'completed', createdAt: { $gte: todayStart } } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
+      Payment.aggregate([{ $match: { status: 'completed', createdAt: { $gte: weekStart  } } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
+      Withdrawal.countDocuments({ status: { $in: ['pending', 'processing'] } }),
+      Withdrawal.aggregate([{ $match: { status: { $in: ['pending', 'processing'] } } }, { $group: { _id: null, total: { $sum: '$amount' } } }]),
+      Media.countDocuments({ isApproved: false, isFlagged: false }),
+      PhotographerApplication.countDocuments({ status: 'pending' }),
+      Withdrawal.countDocuments({ status: 'failed', createdAt: { $gte: weekStart } }),
+      User.countDocuments(),
+      User.countDocuments({ isBanned: true }),
+    ]);
+
+    const loadAvg  = os.loadavg();
+    const freeMem  = os.freemem();
+    const totalMem = os.totalmem();
+
+    res.json({
+      success: true,
+      data: {
+        sales: {
+          today: salesToday[0]?.total || 0,
+          week:  salesWeek[0]?.total  || 0,
+        },
+        withdrawals: {
+          pending:       pendingWithdrawals,
+          pendingAmount: pendingWithdrawalAmount[0]?.total || 0,
+          failedThisWeek: failedWithdrawals,
+        },
+        content: {
+          pendingApprovals:     pendingMediaCount,
+          pendingApplications,
+        },
+        users: { total: totalUsers, banned: bannedUsers },
+        server: {
+          loadAvg1m:    loadAvg[0].toFixed(2),
+          memUsedPct:   (((totalMem - freeMem) / totalMem) * 100).toFixed(1),
+          uptimeHours:  (process.uptime() / 3600).toFixed(1),
+        },
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+// ==================== SYSTEM CONFIG / FEATURE FLAGS ====================
+
+router.get("/config", async (req, res) => {
+  try {
+    const configs = await SystemConfig.find().sort({ category: 1, key: 1 });
+    res.json({ success: true, data: configs });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.patch("/config/:key", logAdminAction('update_config', 'SystemConfig'), async (req, res) => {
+  try {
+    const { value } = req.body;
+    if (value === undefined) return res.status(400).json({ message: 'value is required' });
+    const adminId = req.user?.userId || req.user?.id;
+    const doc = await SystemConfig.set(req.params.key, value, adminId);
+    res.json({ success: true, config: doc });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// Bulk update config
+router.put("/config", logAdminAction('bulk_update_config', 'SystemConfig'), async (req, res) => {
+  try {
+    const { configs } = req.body; // [{ key, value }]
+    if (!Array.isArray(configs)) return res.status(400).json({ message: 'configs array required' });
+    const adminId = req.user?.userId || req.user?.id;
+    await Promise.all(configs.map(({ key, value }) => SystemConfig.set(key, value, adminId)));
+    res.json({ success: true, message: 'Config updated' });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// ==================== PHOTOGRAPHER APPLICATIONS ====================
+
+router.get("/applications", async (req, res) => {
+  try {
+    const { status = 'pending', page = 1, limit = 20 } = req.query;
+    const query = status === 'all' ? {} : { status };
+    const total = await PhotographerApplication.countDocuments(query);
+    const apps  = await PhotographerApplication.find(query)
+      .populate('user', 'username email profilePicture createdAt')
+      .populate('reviewedBy', 'username')
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(Number(limit));
+    res.json({ success: true, data: apps, total });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.patch("/applications/:id/approve", logAdminAction('approve_application', 'PhotographerApplication'), async (req, res) => {
+  try {
+    const app = await PhotographerApplication.findById(req.params.id).populate('user');
+    if (!app) return res.status(404).json({ message: 'Application not found' });
+
+    const adminId = req.user?.userId || req.user?.id;
+    app.status      = 'approved';
+    app.reviewedBy  = adminId;
+    app.reviewedAt  = new Date();
+    app.reviewNotes = req.body.notes || '';
+    await app.save();
+
+    // Upgrade user role to photographer
+    await User.findByIdAndUpdate(app.user._id, { role: 'photographer' });
+
+    res.json({ success: true, message: `${app.user.username} approved as photographer` });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.patch("/applications/:id/reject", logAdminAction('reject_application', 'PhotographerApplication'), async (req, res) => {
+  try {
+    const app = await PhotographerApplication.findById(req.params.id);
+    if (!app) return res.status(404).json({ message: 'Application not found' });
+
+    const adminId = req.user?.userId || req.user?.id;
+    app.status      = 'rejected';
+    app.reviewedBy  = adminId;
+    app.reviewedAt  = new Date();
+    app.reviewNotes = req.body.reason || '';
+    await app.save();
+
+    res.json({ success: true, message: 'Application rejected' });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// ==================== ADMIN ACTION LOGS ====================
+
+router.get("/logs", async (req, res) => {
+  try {
+    const { page = 1, limit = 50, action, adminId } = req.query;
+    const query = {};
+    if (action)  query.action  = { $regex: action, $options: 'i' };
+    if (adminId) query.admin   = adminId;
+
+    const total = await AdminLog.countDocuments(query);
+    const logs  = await AdminLog.find(query)
+      .populate('admin', 'username email')
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(Number(limit));
+
+    res.json({ success: true, data: logs, total, page: Number(page), pages: Math.ceil(total / limit) });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// ==================== STAFF MANAGEMENT ====================
+
+router.get("/staff", async (req, res) => {
+  try {
+    const staff = await User.find({ role: { $in: ['reviewer', 'support'] } })
+      .select('username email role staffPermissions createdAt isActive isBanned')
+      .sort({ createdAt: -1 });
+    res.json({ success: true, data: staff });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.post("/staff", logAdminAction('create_staff', 'User'), async (req, res) => {
+  try {
+    const { username, email, password, role, permissions = {} } = req.body;
+    if (!['reviewer', 'support'].includes(role))
+      return res.status(400).json({ message: 'Role must be reviewer or support' });
+    if (!password || password.length < 8)
+      return res.status(400).json({ message: 'Password must be at least 8 characters' });
+
+    const exists = await User.findOne({ email });
+    if (exists) return res.status(409).json({ message: 'Email already in use' });
+
+    const hashed = await bcrypt.hash(password, 10);
+    const staff  = await User.create({
+      username, email, password: hashed, role,
+      staffPermissions: permissions,
+      isVerified: true,
+    });
+
+    res.status(201).json({ success: true, message: 'Staff member created', staff: { _id: staff._id, username, email, role } });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.patch("/staff/:id/permissions", logAdminAction('update_staff_permissions', 'User'), async (req, res) => {
+  try {
+    const { permissions, role } = req.body;
+    const update = {};
+    if (permissions) update.staffPermissions = permissions;
+    if (role && ['reviewer', 'support'].includes(role)) update.role = role;
+
+    const staff = await User.findByIdAndUpdate(req.params.id, update, { new: true })
+      .select('username email role staffPermissions');
+    if (!staff) return res.status(404).json({ message: 'Staff not found' });
+
+    res.json({ success: true, staff });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.delete("/staff/:id", logAdminAction('remove_staff', 'User'), async (req, res) => {
+  try {
+    const staff = await User.findById(req.params.id);
+    if (!staff) return res.status(404).json({ message: 'Staff not found' });
+    if (!['reviewer', 'support'].includes(staff.role))
+      return res.status(400).json({ message: 'User is not a staff member' });
+
+    staff.role    = 'user';
+    staff.isBanned = true;
+    staff.tokenVersion = (staff.tokenVersion || 0) + 1;
+    await staff.save();
+
+    res.json({ success: true, message: 'Staff access revoked' });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// ==================== KYC / IDENTITY VERIFICATION ====================
+
+router.get("/kyc", async (req, res) => {
+  try {
+    const { status = 'pending' } = req.query;
+    const query = status === 'all' ? { kycStatus: { $ne: 'not_submitted' } } : { kycStatus: status };
+    const users = await User.find(query)
+      .select('username email kycStatus kycSubmittedAt kycReviewedAt kycRejectionReason profilePicture')
+      .sort({ kycSubmittedAt: -1 });
+    res.json({ success: true, data: users });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.patch("/kyc/:userId/verify", logAdminAction('kyc_verify', 'User'), async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(req.params.userId,
+      { kycStatus: 'verified', kycReviewedAt: new Date(), kycRejectionReason: '' },
+      { new: true }
+    ).select('username email kycStatus');
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    res.json({ success: true, message: `${user.username} KYC verified`, user });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+router.patch("/kyc/:userId/reject", logAdminAction('kyc_reject', 'User'), async (req, res) => {
+  try {
+    const { reason = 'Documents unclear or invalid' } = req.body;
+    const user = await User.findByIdAndUpdate(req.params.userId,
+      { kycStatus: 'rejected', kycReviewedAt: new Date(), kycRejectionReason: reason },
+      { new: true }
+    ).select('username email kycStatus');
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    res.json({ success: true, message: `${user.username} KYC rejected`, user });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// ==================== DYNAMIC COMMISSION ====================
+
+router.patch("/users/:id/commission", logAdminAction('update_commission', 'User'), async (req, res) => {
+  try {
+    const { rate } = req.body;
+    if (rate !== null && (isNaN(rate) || rate < 0 || rate > 100))
+      return res.status(400).json({ message: 'Rate must be 0–100 or null (to use default)' });
+
+    const user = await User.findByIdAndUpdate(req.params.id, { commissionRate: rate ?? null }, { new: true })
+      .select('username email commissionRate');
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    res.json({ success: true, message: `Commission rate set to ${rate ?? 'default'}%`, user });
+  } catch (err) { res.status(500).json({ message: err.message }); }
+});
+
+// ==================== SYSTEM RESET ====================
+
+router.post("/system/reset", async (req, res) => {
+  try {
+    const { password, confirmPhrase } = req.body;
+
+    if (confirmPhrase !== 'RESET SYSTEM') {
+      return res.status(400).json({ message: 'Type "RESET SYSTEM" exactly to confirm' });
+    }
+
+    // Verify admin password
+    const adminId = req.user?.userId || req.user?.id;
+    const admin   = await User.findById(adminId).select('+password');
+    if (!admin?.password) return res.status(400).json({ message: 'Cannot verify password for OAuth-only accounts' });
+    const valid = await bcrypt.compare(password, admin.password);
+    if (!valid) return res.status(403).json({ message: 'Incorrect password' });
+
+    // Wipe system settings + logs (keep users, media, financial data)
+    const [logCount, configCount] = await Promise.all([
+      AdminLog.deleteMany({}),
+      SystemConfig.deleteMany({}),
+    ]);
+
+    // Re-seed defaults
+    const { seedDefaults } = await import('../models/SystemConfig.js');
+    await seedDefaults();
+
+    res.json({
+      success: true,
+      message: 'System settings and audit logs cleared. Defaults restored.',
+      wiped: { logs: logCount.deletedCount, configs: configCount.deletedCount },
+    });
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 

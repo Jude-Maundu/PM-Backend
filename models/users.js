@@ -11,10 +11,28 @@ const userSchema = new Schema({
   phoneNumber: { type: String, default: "" }, // For photographers to receive payments
   role: {
     type: String,
-    enum: ["admin", "photographer", "user", "institution"],
+    enum: ["admin", "reviewer", "support", "photographer", "user", "institution"],
     default: "user"
   },
-  watermark: { type: String, default: "Relic Snap" }, // Photographer watermark text
+  // Staff-specific: permissions granted by admin
+  staffPermissions: {
+    canApprovePhotos:    { type: Boolean, default: false },
+    canVerifyUsers:      { type: Boolean, default: false },
+    canViewOrders:       { type: Boolean, default: false },
+    canManageWithdrawals:{ type: Boolean, default: false },
+  },
+  // Per-photographer custom commission rate (null = use platform default)
+  commissionRate: { type: Number, default: null, min: 0, max: 100 },
+  // KYC / identity verification
+  kycStatus: {
+    type: String,
+    enum: ['not_submitted', 'pending', 'verified', 'rejected'],
+    default: 'not_submitted',
+  },
+  kycRejectionReason: { type: String, default: '' },
+  kycSubmittedAt: { type: Date },
+  kycReviewedAt: { type: Date },
+  watermark: { type: String, default: "PhotoMarket" },
   isActive: {
     type: Boolean,
     default: true

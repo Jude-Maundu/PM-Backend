@@ -40,6 +40,7 @@ import { processPendingB2cRetries } from "./controllers/paymentController.js";
 import emailService from "./services/emailService.js";
 import { initializeSocket } from "./services/socketService.js";
 import { startAutoPayout } from "./jobs/autoPayout.js";
+import { seedDefaults } from "./models/SystemConfig.js";
 
 console.log("✅ Admin settings router imported", !!adminSettingsRouter);
 console.log("✅ User routes router imported", !!userRoutes);
@@ -318,8 +319,8 @@ async function dbconnection() {
     await mongoose.connect(mongoURI);
     console.log("✅ Connected to MongoDB");
 
-    // Ensure an admin user exists (for initial setup)
     await ensureAdminUser();
+    await seedDefaults();
   } catch (error) {
     console.error("❌ MongoDB connection error:", error.message || error);
     if (process.env.NODE_ENV === 'production') {
