@@ -30,7 +30,7 @@ export async function getUserFavorites(req, res) {
     res.status(200).json(favorites);
   } catch (error) {
     console.error("Error fetching favorites:", error);
-    res.status(500).json({ message: "Error fetching favorites", error: error.message });
+    res.status(500).json({ message: "Error fetching favorites", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -39,11 +39,13 @@ export async function getUserFavorites(req, res) {
 // ==============================
 export async function addFavorite(req, res) {
   try {
-    const { userId, mediaId } = req.body;
+    // Use authenticated user — ignore any userId in body to prevent IDOR
+    const userId = (req.user?.userId || req.user?.id || req.user?._id)?.toString();
+    const { mediaId } = req.body;
 
     // Validate inputs
     if (!userId || !mediaId) {
-      return res.status(400).json({ message: "userId and mediaId are required" });
+      return res.status(400).json({ message: "mediaId is required" });
     }
 
     // Check if user exists
@@ -83,7 +85,7 @@ export async function addFavorite(req, res) {
     res.status(201).json({ message: "Added to favorites", favorite });
   } catch (error) {
     console.error("Error adding favorite:", error);
-    res.status(500).json({ message: "Error adding favorite", error: error.message });
+    res.status(500).json({ message: "Error adding favorite", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -112,7 +114,7 @@ export async function removeFavorite(req, res) {
     res.status(200).json({ message: "Removed from favorites" });
   } catch (error) {
     console.error("Error removing favorite:", error);
-    res.status(500).json({ message: "Error removing favorite", error: error.message });
+    res.status(500).json({ message: "Error removing favorite", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -128,6 +130,6 @@ export async function isFavorited(req, res) {
     res.status(200).json({ isFavorited: !!favorite });
   } catch (error) {
     console.error("Error checking favorite:", error);
-    res.status(500).json({ message: "Error checking favorite", error: error.message });
+    res.status(500).json({ message: "Error checking favorite", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }

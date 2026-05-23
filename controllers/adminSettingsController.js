@@ -49,7 +49,7 @@ async function getSettings(req, res) {
     res.status(200).json(settings);
   } catch (error) {
     console.error("Error fetching settings:", error);
-    res.status(500).json({ message: "Error fetching settings", error: error.message });
+    res.status(500).json({ message: "Error fetching settings", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -68,7 +68,7 @@ async function updateSettings(req, res) {
     res.status(200).json({ success: true, settings });
   } catch (error) {
     console.error("Error updating settings:", error);
-    res.status(500).json({ message: "Error updating settings", error: error.message });
+    res.status(500).json({ message: "Error updating settings", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -87,7 +87,7 @@ async function updatePlatformFee(req, res) {
     res.status(200).json({ success: true, platformFee: settings.platformFee });
   } catch (error) {
     console.error("Error updating platform fee:", error);
-    res.status(500).json({ message: "Error updating platform fee", error: error.message });
+    res.status(500).json({ message: "Error updating platform fee", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -106,7 +106,7 @@ async function updatePayout(req, res) {
     res.status(200).json({ success: true, minPayout: settings.minPayout });
   } catch (error) {
     console.error("Error updating min payout:", error);
-    res.status(500).json({ message: "Error updating min payout", error: error.message });
+    res.status(500).json({ message: "Error updating min payout", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -137,7 +137,7 @@ async function sendTestEmail(req, res) {
     res.status(200).json({ success: true, message: "Test email sent", info });
   } catch (error) {
     console.error("Error sending test email:", error);
-    res.status(500).json({ message: "Error sending test email", error: error.message });
+    res.status(500).json({ message: "Error sending test email", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -161,7 +161,7 @@ async function setMaintenanceMode(req, res) {
     res.status(200).json({ success: true, maintenanceMode: settings.maintenanceMode });
   } catch (error) {
     console.error("Error setting maintenance mode:", error);
-    res.status(500).json({ message: "Error setting maintenance mode", error: error.message });
+    res.status(500).json({ message: "Error setting maintenance mode", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -201,7 +201,7 @@ async function getPurchaseAudit(req, res) {
     res.status(200).json({ audit });
   } catch (error) {
     console.error("Error fetching purchase audit:", error);
-    res.status(500).json({ message: "Error fetching purchase audit", error: error.message });
+    res.status(500).json({ message: "Error fetching purchase audit", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 

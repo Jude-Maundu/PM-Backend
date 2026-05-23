@@ -55,12 +55,12 @@ router.get('/google/callback', (req, res, next) => {
 });
 
 // User management routes
-router.get('/users', getAllUsers);
-router.get('/users/:id', getUser);
-router.put('/users/:id', uploadProfile.single('profilePicture'), updateUser);
+router.get('/users', authenticate, getAllUsers);
+router.get('/users/:id', getUser);                                                   // public profile – password already stripped
+router.put('/users/:id', authenticate, uploadProfile.single('profilePicture'), updateUser);
 router.post('/users/:id/change-password', authenticate, changePassword);
-router.put('/photographers/:id/phone', updatePhotographerPhone);
-router.delete('/users/:id', DeleteUser);
+router.put('/photographers/:id/phone', authenticate, updatePhotographerPhone);
+router.delete('/users/:id', authenticate, DeleteUser);
 
 // Follow routes
 router.post('/users/:userId/follow', authenticate, followUser);

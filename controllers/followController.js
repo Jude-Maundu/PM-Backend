@@ -48,7 +48,7 @@ export async function followUser(req, res) {
 
   } catch (error) {
     console.error("Error following user:", error);
-    res.status(500).json({ message: "Error following user", error: error.message });
+    res.status(500).json({ message: "Error following user", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -96,7 +96,7 @@ export async function unfollowUser(req, res) {
 
   } catch (error) {
     console.error("Error unfollowing user:", error);
-    res.status(500).json({ message: "Error unfollowing user", error: error.message });
+    res.status(500).json({ message: "Error unfollowing user", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -122,7 +122,7 @@ export async function getUserFollowers(req, res) {
 
   } catch (error) {
     console.error("Error fetching followers:", error);
-    res.status(500).json({ message: "Error fetching followers", error: error.message });
+    res.status(500).json({ message: "Error fetching followers", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -148,7 +148,7 @@ export async function getUserFollowing(req, res) {
 
   } catch (error) {
     console.error("Error fetching following:", error);
-    res.status(500).json({ message: "Error fetching following", error: error.message });
+    res.status(500).json({ message: "Error fetching following", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -176,6 +176,6 @@ export async function isFollowing(req, res) {
 
   } catch (error) {
     console.error("Error checking follow status:", error);
-    res.status(500).json({ message: "Error checking follow status", error: error.message });
+    res.status(500).json({ message: "Error checking follow status", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }

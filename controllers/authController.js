@@ -15,6 +15,10 @@ async function register(req, res) {
       return res.status(400).json({ message: "Username, email, password, and phoneNumber are required" });
     }
 
+    if (password.length < 6) {
+      return res.status(400).json({ message: "Password must be at least 6 characters" });
+    }
+
     // Validate phone number format (should be 254XXXXXXXXX)
     const phoneRegex = /^254\d{9}$/;
     if (!phoneRegex.test(phoneNumber)) {
@@ -70,7 +74,7 @@ async function register(req, res) {
 
     // Generate JWT token (same as login)
     const token = jwt.sign(
-      { userId: newUser._id, email: newUser.email, role: newUser.role },
+      { userId: newUser._id, email: newUser.email, role: newUser.role, tokenVersion: newUser.tokenVersion || 0 },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -79,7 +83,7 @@ async function register(req, res) {
     const { password: pw, ...safeData } = newUser._doc;
     return res.status(201).json({ token, user: safeData });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -96,7 +100,7 @@ async function login(req, res) {
 
     // Generate JWT token
     const token = jwt.sign(
-      { userId: user._id, email: user.email, role: user.role },
+      { userId: user._id, email: user.email, role: user.role, tokenVersion: user.tokenVersion || 0 },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -104,7 +108,7 @@ async function login(req, res) {
     const { password: pw, ...safeData } = user._doc;
     return res.status(200).json({ token, user: safeData });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -128,7 +132,7 @@ async function googleAuthCallback(req, res) {
 
     // Generate JWT token
     const token = jwt.sign(
-      { userId: user._id, email: user.email, role: user.role },
+      { userId: user._id, email: user.email, role: user.role, tokenVersion: user.tokenVersion || 0 },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -156,7 +160,7 @@ async function getAllUsers(req, res) {
     const users = await User.find().select("-password");
     return res.status(200).json(users);
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -173,7 +177,7 @@ async function getUser(req, res) {
     const { password: pw, ...safeData } = user._doc;
     return res.status(200).json(safeData);
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -181,6 +185,14 @@ async function getUser(req, res) {
 async function updateUser(req, res) {
   try {
     const { id } = req.params;
+    const callerId = req.user?.userId || req.user?.id || req.user?._id;
+    const callerRole = req.user?.role;
+
+    // Only the user themselves or an admin may update a profile
+    if (callerId?.toString() !== id && callerRole !== 'admin') {
+      return res.status(403).json({ message: "Forbidden: you can only update your own profile" });
+    }
+
     const { username, name, email, password, role, phoneNumber, watermark, profilePicture } = req.body;
     const resolvedUsername = username || name;
 
@@ -198,8 +210,10 @@ async function updateUser(req, res) {
     if (password) {
       user.password = await bcrypt.hash(password, 10);
     }
-    if (role) {
-      user.role = role;
+    // Only admins may change roles
+    if (role && callerRole === 'admin') {
+      const allowed = ["admin", "photographer", "user", "institution"];
+      if (allowed.includes(role)) user.role = role;
     }
     if (phoneNumber !== undefined && phoneNumber !== null) {
       if (phoneNumber === "") {
@@ -258,7 +272,7 @@ async function updateUser(req, res) {
     const { password: pw, ...safeData } = user._doc;
     return res.status(200).json(safeData);
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -266,6 +280,12 @@ async function updateUser(req, res) {
 async function DeleteUser(req, res) {
   try {
     const { id } = req.params;
+    const callerId = req.user?.userId || req.user?.id || req.user?._id;
+    const callerRole = req.user?.role;
+
+    if (callerId?.toString() !== id && callerRole !== 'admin') {
+      return res.status(403).json({ message: "Forbidden: you can only delete your own account" });
+    }
 
     const user = await User.findById(id);
     if (!user) return res.status(404).json({ message: "User not found" });
@@ -273,7 +293,7 @@ async function DeleteUser(req, res) {
     await User.findByIdAndDelete(id);
     return res.status(200).json({ message: "User deleted successfully" });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ message: "Internal server error" });
   }
 }
 
@@ -313,7 +333,7 @@ async function updatePhotographerPhone(req, res) {
       user: safeData
     });
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -338,7 +358,7 @@ async function getCurrentUser(req, res) {
     const { password: pw, ...safeData } = user._doc;
     return res.status(200).json(safeData);
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -360,10 +380,11 @@ async function changePassword(req, res) {
     const match = await bcrypt.compare(currentPassword, user.password);
     if (!match) return res.status(400).json({ message: "Current password is incorrect" });
     user.password = await bcrypt.hash(newPassword, 10);
+    user.tokenVersion = (user.tokenVersion || 0) + 1; // invalidate all existing JWTs
     await user.save();
     res.json({ message: "Password changed successfully" });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 

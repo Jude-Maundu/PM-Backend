@@ -6,10 +6,16 @@ import {
   requestWithdrawal,
   getPhotographerWithdrawals,
   getAllWithdrawals,
-  processWithdrawal
+  processWithdrawal,
+  b2cWithdrawalCallback,
+  b2cWithdrawalTimeout,
 } from '../controllers/withdrawalController.js';
 
 const router = express.Router();
+
+// Safaricom B2C callbacks — unauthenticated (Safaricom POSTs here)
+router.post('/b2c-callback', b2cWithdrawalCallback);
+router.post('/b2c-timeout', b2cWithdrawalTimeout);
 
 // Photographer routes
 router.post('/request', authenticate, requirePhotographer, requestWithdrawal);

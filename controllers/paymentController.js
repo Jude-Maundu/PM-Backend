@@ -736,7 +736,7 @@ async function buyMedia(req, res) {
     return res.status(201).json({ success: true, message: "Purchase completed", payment });
   } catch (error) {
     console.error("❌ buyMedia error:", error);
-    return res.status(500).json({ success: false, message: "Failed to complete purchase", error: error.message });
+    return res.status(500).json({ success: false, message: "Failed to complete purchase", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -764,7 +764,7 @@ async function getPhotographerEarnings(req, res) {
     });
   } catch (error) {
     console.error("Error fetching earnings:", error);
-    res.status(500).json({ message: "Error fetching earnings", error: error.message });
+    res.status(500).json({ message: "Error fetching earnings", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -829,7 +829,7 @@ async function getPhotographerEarningsSummary(req, res) {
     console.error("Error fetching earnings summary:", error);
     res.status(500).json({
       message: "Error fetching earnings summary",
-      error: error.message,
+      error: process.env.NODE_ENV !== "production" ? error.message : undefined,
     });
   }
 }
@@ -848,7 +848,7 @@ async function getPaymentStatus(req, res) {
     return res.status(200).json(payment);
   } catch (error) {
     console.error("Error fetching payment status:", error);
-    return res.status(500).json({ message: "Error fetching payment status", error: error.message });
+    return res.status(500).json({ message: "Error fetching payment status", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -904,7 +904,7 @@ async function getPurchaseHistory(req, res) {
     console.error("Error fetching purchase history:", error);
     res.status(500).json({
       message: "Error fetching purchase history",
-      error: error.message,
+      error: process.env.NODE_ENV !== "production" ? error.message : undefined,
     });
   }
 }
@@ -939,7 +939,7 @@ async function getMpesaLogs(req, res) {
     });
   } catch (error) {
     console.error("Error fetching mpesa logs:", error);
-    res.status(500).json({ message: "Error fetching mpesa logs", error: error.message });
+    res.status(500).json({ message: "Error fetching mpesa logs", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -949,7 +949,7 @@ async function getMpesaRetries(req, res) {
     res.status(200).json(retries);
   } catch (error) {
     console.error("Error fetching mpesa retries:", error);
-    res.status(500).json({ message: "Error fetching mpesa retries", error: error.message });
+    res.status(500).json({ message: "Error fetching mpesa retries", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -993,20 +993,22 @@ async function getAdminDashboard(req, res) {
     });
   } catch (error) {
     console.error("Error fetching admin dashboard:", error);
-    res.status(500).json({ message: "Error fetching admin dashboard", error: error.message });
+    res.status(500).json({ message: "Error fetching admin dashboard", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
-export { 
-  payWithMpesa, 
-  mpesaCallback, 
-  buyMedia, 
-  getPhotographerEarnings, 
-  getAdminDashboard, 
-  getPhotographerEarningsSummary, 
+export {
+  payWithMpesa,
+  mpesaCallback,
+  buyMedia,
+  getPhotographerEarnings,
+  getAdminDashboard,
+  getPhotographerEarningsSummary,
   getPurchaseHistory,
   getPaymentStatus,
   getMpesaLogs,
   getMpesaRetries,
-  processPendingB2cRetries
+  processPendingB2cRetries,
+  sendMoneyToPhotographer,
+  getAccessToken
 };

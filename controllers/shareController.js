@@ -156,7 +156,7 @@ export async function generateShareLink(req, res) {
     });
   } catch (error) {
     console.error("[generateShareLink] Error:", error.message);
-    res.status(500).json({ success: false, message: "Error generating share link", error: error.message });
+    res.status(500).json({ success: false, message: "Error generating share link", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -242,7 +242,7 @@ export async function accessSharedMedia(req, res) {
     });
   } catch (error) {
     console.error("[accessSharedMedia] Error:", error.message);
-    res.status(500).json({ success: false, message: "Error accessing share", error: error.message });
+    res.status(500).json({ success: false, message: "Error accessing share", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -307,7 +307,7 @@ export async function downloadViaShareLink(req, res) {
     });
   } catch (error) {
     console.error("[downloadViaShareLink] Error:", error.message);
-    res.status(500).json({ success: false, message: "Error downloading file", error: error.message });
+    res.status(500).json({ success: false, message: "Error downloading file", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -352,7 +352,7 @@ export async function revokeShareLink(req, res) {
     res.status(200).json({ success: true, message: "Share link revoked" });
   } catch (error) {
     console.error("[revokeShareLink] Error:", error.message);
-    res.status(500).json({ success: false, message: "Error revoking share", error: error.message });
+    res.status(500).json({ success: false, message: "Error revoking share", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -387,7 +387,7 @@ export async function listActiveShares(req, res) {
     });
   } catch (error) {
     console.error("[listActiveShares] Error:", error.message);
-    res.status(500).json({ success: false, message: "Error fetching shares", error: error.message });
+    res.status(500).json({ success: false, message: "Error fetching shares", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -427,7 +427,7 @@ export async function getShareStats(req, res) {
     });
   } catch (error) {
     console.error("[getShareStats] Error:", error.message);
-    res.status(500).json({ success: false, message: "Error fetching stats", error: error.message });
+    res.status(500).json({ success: false, message: "Error fetching stats", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -513,7 +513,7 @@ export async function shareAlbumWithBuyer(req, res) {
     });
   } catch (error) {
     console.error("[shareAlbumWithBuyer] Error:", error.message);
-    res.status(500).json({ success: false, message: "Error generating album share link", error: error.message });
+    res.status(500).json({ success: false, message: "Error generating album share link", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -632,7 +632,7 @@ export async function purchaseViaShare(req, res) {
     });
   } catch (error) {
     console.error("[purchaseViaShare] Error:", error.response?.data || error.message);
-    return res.status(500).json({ success: false, message: "Failed to initiate payment", error: error.message });
+    return res.status(500).json({ success: false, message: "Failed to initiate payment", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 

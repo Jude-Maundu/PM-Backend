@@ -28,7 +28,7 @@ export async function getCart(req, res) {
     res.status(200).json(cart);
   } catch (error) {
     console.error('[getCart] Error:', error.message);
-    res.status(500).json({ message: "Error fetching cart", error: error.message });
+    res.status(500).json({ message: "Error fetching cart", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -37,10 +37,12 @@ export async function getCart(req, res) {
 // ==============================
 export async function addToCart(req, res) {
   try {
-    const { userId, mediaId } = req.body;
+    // Use authenticated user — ignore any userId in body to prevent IDOR
+    const userId = (req.user?.userId || req.user?.id || req.user?._id)?.toString();
+    const { mediaId } = req.body;
 
     if (!userId || !mediaId) {
-      return res.status(400).json({ message: "userId and mediaId are required" });
+      return res.status(400).json({ message: "mediaId is required" });
     }
 
     // Validate MongoDB ObjectId format
@@ -88,7 +90,7 @@ export async function addToCart(req, res) {
     res.status(200).json({ message: "Item added to cart", cart });
   } catch (error) {
     console.error('[addToCart] Error:', error.message);
-    res.status(500).json({ message: "Error adding to cart", error: error.message });
+    res.status(500).json({ message: "Error adding to cart", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -97,10 +99,11 @@ export async function addToCart(req, res) {
 // ==============================
 export async function removeFromCart(req, res) {
   try {
-    const { userId, mediaId } = req.body;
+    const userId = (req.user?.userId || req.user?.id || req.user?._id)?.toString();
+    const { mediaId } = req.body;
 
     if (!userId || !mediaId) {
-      return res.status(400).json({ message: "userId and mediaId are required" });
+      return res.status(400).json({ message: "mediaId is required" });
     }
 
     const cart = await Cart.findOne({ user: userId });
@@ -123,7 +126,7 @@ export async function removeFromCart(req, res) {
     res.status(200).json({ message: "Item removed from cart", cart });
   } catch (error) {
     console.error('[removeFromCart] Error:', error.message);
-    res.status(500).json({ message: "Error removing from cart", error: error.message });
+    res.status(500).json({ message: "Error removing from cart", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -148,6 +151,6 @@ export async function clearCart(req, res) {
     res.status(200).json({ message: "Cart cleared", cart });
   } catch (error) {
     console.error('[clearCart] Error:', error.message);
-    res.status(500).json({ message: "Error clearing cart", error: error.message });
+    res.status(500).json({ message: "Error clearing cart", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }

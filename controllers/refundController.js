@@ -30,7 +30,7 @@ export async function requestRefund(req, res) {
 
     res.status(201).json({ message: "Refund requested", refund });
   } catch (error) {
-    res.status(500).json({ message: "Error requesting refund", error: error.message });
+    res.status(500).json({ message: "Error requesting refund", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -48,7 +48,7 @@ export async function getUserRefunds(req, res) {
 
     res.status(200).json(refunds);
   } catch (error) {
-    res.status(500).json({ message: "Error fetching refunds", error: error.message });
+    res.status(500).json({ message: "Error fetching refunds", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -83,7 +83,7 @@ export async function approveRefund(req, res) {
 
     res.status(200).json({ message: "Refund approved", refund: updatedRefund });
   } catch (error) {
-    res.status(500).json({ message: "Error approving refund", error: error.message });
+    res.status(500).json({ message: "Error approving refund", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -104,7 +104,7 @@ export async function rejectRefund(req, res) {
 
     res.status(200).json({ message: "Refund rejected", refund });
   } catch (error) {
-    res.status(500).json({ message: "Error rejecting refund", error: error.message });
+    res.status(500).json({ message: "Error rejecting refund", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -134,7 +134,7 @@ export async function processRefund(req, res) {
       refund
     });
   } catch (error) {
-    res.status(500).json({ message: "Error processing refund", error: error.message });
+    res.status(500).json({ message: "Error processing refund", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -150,6 +150,6 @@ export async function getAllRefunds(req, res) {
 
     res.status(200).json(refunds);
   } catch (error) {
-    res.status(500).json({ message: "Error fetching refunds", error: error.message });
+    res.status(500).json({ message: "Error fetching refunds", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }

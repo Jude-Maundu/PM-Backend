@@ -46,7 +46,7 @@ export async function createReceipt(req, res) {
 
     res.status(201).json({ message: "Receipt created", receipt });
   } catch (error) {
-    res.status(500).json({ message: "Error creating receipt", error: error.message });
+    res.status(500).json({ message: "Error creating receipt", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -66,7 +66,7 @@ export async function getReceipt(req, res) {
 
     res.status(200).json(receipt);
   } catch (error) {
-    res.status(500).json({ message: "Error fetching receipt", error: error.message });
+    res.status(500).json({ message: "Error fetching receipt", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -84,7 +84,7 @@ export async function getUserReceipts(req, res) {
 
     res.status(200).json(receipts);
   } catch (error) {
-    res.status(500).json({ message: "Error fetching receipts", error: error.message });
+    res.status(500).json({ message: "Error fetching receipts", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -101,6 +101,6 @@ export async function getAllReceipts(req, res) {
 
     res.status(200).json(receipts);
   } catch (error) {
-    res.status(500).json({ message: "Error fetching receipts", error: error.message });
+    res.status(500).json({ message: "Error fetching receipts", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }

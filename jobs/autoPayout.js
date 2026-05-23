@@ -49,9 +49,11 @@ async function runAutoPayout() {
       }
 
       try {
+        const payoutAmount = wallet.balance;
+
         const withdrawal = await Withdrawal.create({
           photographer: user._id,
-          amount: wallet.balance,
+          amount: payoutAmount,
           method: 'mpesa',
           phoneNumber: user.phoneNumber,
           status: 'pending',
@@ -59,8 +61,12 @@ async function runAutoPayout() {
           notes: `Auto-payout triggered on ${new Date().toISOString()}`
         });
 
+        // Deduct balance so the same funds are not paid out again tomorrow
+        wallet.balance = 0;
+        await wallet.save();
+
         console.log(
-          `[autoPayout] Created withdrawal ${withdrawal.reference} for ${user.username} — KES ${wallet.balance}`
+          `[autoPayout] Created withdrawal ${withdrawal.reference} for ${user.username} — KES ${payoutAmount}`
         );
 
         // Emit socket notification to the photographer if socket is available

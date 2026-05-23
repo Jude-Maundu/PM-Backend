@@ -25,7 +25,7 @@ export async function getConversations(req, res) {
     res.status(200).json(conversations);
   } catch (error) {
     console.error("[getConversations] Error:", error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 }
 
@@ -70,7 +70,7 @@ export async function getConversationWithUser(req, res) {
     res.status(200).json(conversation);
   } catch (error) {
     console.error("[getConversationWithUser] Error:", error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 }
 
@@ -128,7 +128,7 @@ export async function sendMessage(req, res) {
     res.status(201).json(message);
   } catch (error) {
     console.error("[sendMessage] Error:", error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 }
 
@@ -176,7 +176,7 @@ export async function getMessages(req, res) {
     res.status(200).json(messages.reverse());
   } catch (error) {
     console.error("[getMessages] Error:", error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 }
 
@@ -227,7 +227,7 @@ export async function editMessage(req, res) {
     res.status(200).json(message);
   } catch (error) {
     console.error("[editMessage] Error:", error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 }
 
@@ -271,7 +271,7 @@ export async function deleteMessage(req, res) {
     }
   } catch (error) {
     console.error("[deleteMessage] Error:", error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 }
 
@@ -310,7 +310,7 @@ export async function addReaction(req, res) {
     res.status(200).json(message);
   } catch (error) {
     console.error("[addReaction] Error:", error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 }
 
@@ -344,7 +344,7 @@ export async function removeReaction(req, res) {
     res.status(200).json(message);
   } catch (error) {
     console.error("[removeReaction] Error:", error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 }
 
@@ -379,7 +379,7 @@ export async function markAsRead(req, res) {
     res.status(200).json({ message: "Marked as read" });
   } catch (error) {
     console.error("[markAsRead] Error:", error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 }
 
@@ -408,7 +408,7 @@ export async function archiveConversation(req, res) {
     res.status(200).json({ message: "Conversation archived" });
   } catch (error) {
     console.error("[archiveConversation] Error:", error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 }
 
@@ -432,6 +432,6 @@ export async function unarchiveConversation(req, res) {
     res.status(200).json({ message: "Conversation unarchived" });
   } catch (error) {
     console.error("[unarchiveConversation] Error:", error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 }

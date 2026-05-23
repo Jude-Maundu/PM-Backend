@@ -44,110 +44,76 @@ import {
 
 const router = express.Router();
 
+// ──────────────────────────────────────────────────────────
+// Ownership guard: caller must be the owner or an admin
+// ──────────────────────────────────────────────────────────
+function ownsResource(paramName = "userId") {
+  return (req, res, next) => {
+    const callerId = (req.user?.userId || req.user?.id || req.user?._id)?.toString();
+    const targetId = req.params[paramName] || req.body[paramName];
+    if (!callerId) return res.status(401).json({ message: "Authentication required" });
+    if (callerId !== targetId?.toString() && req.user?.role !== "admin") {
+      return res.status(403).json({ message: "Forbidden: you can only access your own data" });
+    }
+    next();
+  };
+}
+
 // ============================================
 // PAYMENT ENDPOINTS
 // ============================================
 router.get("/mpesa", (req, res) => {
   return res.status(200).json({ message: "mpesa route is mounted", path: req.originalUrl });
 });
-router.post("/mpesa", payWithMpesa);
-router.post("/mpesa/topup", payWithMpesa);
-router.post("/mpesa/mock-callback", async (req, res) => {
-  try {
-    const { paymentId } = req.body;
-    
-    // Get the payment to get the correct CheckoutRequestID
-    const Payment = (await import("../models/Payment.js")).default;
-    const payment = await Payment.findById(paymentId);
-    if (!payment) {
-      return res.status(404).json({ message: "Payment not found" });
-    }
-    
-    const mockCallbackData = {
-      Body: {
-        stkCallback: {
-          CheckoutRequestID: payment.checkoutRequestID,
-          ResultCode: 0,
-          ResultDesc: "The service request is processed successfully.",
-          CallbackMetadata: {
-            Item: [
-              {
-                Name: "MpesaReceiptNumber",
-                Value: `MOCK${Date.now()}`
-              },
-              {
-                Name: "TransactionDate",
-                Value: new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14)
-              },
-              {
-                Name: "PhoneNumber",
-                Value: payment.phoneNumber || "254712345678"
-              }
-            ]
-          }
-        }
-      }
-    };
+router.post("/mpesa", authenticate, payWithMpesa);
+router.post("/mpesa/topup", authenticate, payWithMpesa);
 
-    // Simulate callback processing
-    const callbackReq = { body: mockCallbackData };
-    const callbackRes = {
-      status: (code) => ({
-        json: (data) => {
-          console.log(`Mock callback response: ${code}`, data);
-          return res.status(code).json(data);
-        }
-      })
-    };
-
-    await mpesaCallback(callbackReq, callbackRes);
-  } catch (error) {
-    console.error("Mock callback error:", error);
-    res.status(500).json({ error: error.message });
-  }
-});
+// M-Pesa callback — must remain unauthenticated (Safaricom calls it)
 router.post("/callback", mpesaCallback);
-router.get("/:paymentId", getPaymentStatus);
-router.get("/mpesa/logs", getMpesaLogs);
-router.get("/mpesa/retries", getMpesaRetries);
-router.post("/buy", buyMedia);
-router.get("/purchase-history/:userId", getPurchaseHistory);
-router.get("/earnings/:photographerId", getPhotographerEarnings);
-router.get("/earnings-summary/:photographerId", getPhotographerEarningsSummary);
+
+// Admin only: M-Pesa logs/retries (duplicated from mpesaDiagnosticsRoutes for convenience)
+router.get("/mpesa/logs", authenticate, requireAdmin, getMpesaLogs);
+router.get("/mpesa/retries", authenticate, requireAdmin, getMpesaRetries);
+
+router.post("/buy", authenticate, buyMedia);
+router.get("/:paymentId", authenticate, getPaymentStatus);
+router.get("/purchase-history/:userId", authenticate, ownsResource("userId"), getPurchaseHistory);
+router.get("/earnings/:photographerId", authenticate, ownsResource("photographerId"), getPhotographerEarnings);
+router.get("/earnings-summary/:photographerId", authenticate, ownsResource("photographerId"), getPhotographerEarningsSummary);
 router.get("/admin/dashboard", authenticate, requireAdmin, getAdminDashboard);
 
 // ============================================
-// CART ENDPOINTS
+// CART ENDPOINTS — all require auth + ownership
 // ============================================
-router.get("/cart/:userId", getCart);
-router.post("/cart/add", addToCart);
-router.post("/cart/remove", removeFromCart);
-router.delete("/cart/:userId", clearCart);
+router.get("/cart/:userId", authenticate, ownsResource("userId"), getCart);
+router.post("/cart/add", authenticate, addToCart);      // ownership checked inside controller via req.user
+router.post("/cart/remove", authenticate, removeFromCart);
+router.delete("/cart/:userId", authenticate, ownsResource("userId"), clearCart);
 
 // ============================================
 // RECEIPT ENDPOINTS
 // ============================================
-router.post("/receipt/create", createReceipt);
-router.get("/receipt/:receiptId", getReceipt);
-router.get("/receipts/:userId", getUserReceipts);
+router.post("/receipt/create", authenticate, createReceipt);
+router.get("/receipt/:receiptId", authenticate, getReceipt);
+router.get("/receipts/:userId", authenticate, ownsResource("userId"), getUserReceipts);
 router.get("/admin/receipts", authenticate, requireAdmin, getAllReceipts);
 
 // ============================================
 // REFUND ENDPOINTS
 // ============================================
-router.post("/refund/request", requestRefund);
-router.get("/refunds/:userId", getUserRefunds);
-router.post("/refund/approve", approveRefund);
-router.post("/refund/reject", rejectRefund);
-router.post("/refund/process", processRefund);
+router.post("/refund/request", authenticate, requestRefund);
+router.get("/refunds/:userId", authenticate, ownsResource("userId"), getUserRefunds);
+router.post("/refund/approve", authenticate, requireAdmin, approveRefund);
+router.post("/refund/reject", authenticate, requireAdmin, rejectRefund);
+router.post("/refund/process", authenticate, requireAdmin, processRefund);
 router.get("/admin/refunds", authenticate, requireAdmin, getAllRefunds);
 
 // ============================================
 // WALLET ENDPOINTS
 // ============================================
-router.get("/wallet/:userId", getWalletBalance);
-router.get("/transactions/:userId", getTransactions);
-router.post("/wallet/add", addFundsToWallet);
+router.get("/wallet/:userId", authenticate, ownsResource("userId"), getWalletBalance);
+router.get("/transactions/:userId", authenticate, ownsResource("userId"), getTransactions);
+router.post("/wallet/add", authenticate, requireAdmin, addFundsToWallet);  // admin only: manual credit
 
 // ============================================
 // ALBUM PURCHASE (wallet-based)
@@ -220,7 +186,7 @@ router.post("/album/:albumId/buy", authenticate, async (req, res) => {
     });
   } catch (err) {
     console.error("Album purchase error:", err);
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 });
 
@@ -234,7 +200,7 @@ router.get("/album/:albumId/purchased", authenticate, async (req, res) => {
     const purchased = album.purchasedBy.map(id => id.toString()).includes(buyerId.toString());
     res.json({ purchased, price: album.price });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 });
 

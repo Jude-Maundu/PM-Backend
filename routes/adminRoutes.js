@@ -38,6 +38,7 @@ router.patch("/users/:id/ban", async (req, res) => {
     if (!user) return res.status(404).json({ message: "User not found" });
     user.isBanned = !user.isBanned;
     user.isActive = !user.isBanned;
+    if (user.isBanned) user.tokenVersion = (user.tokenVersion || 0) + 1; // force re-login
     await user.save();
     res.json({ message: `User ${user.isBanned ? "banned" : "unbanned"}`, isBanned: user.isBanned });
   } catch (err) {

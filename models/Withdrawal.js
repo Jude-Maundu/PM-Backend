@@ -45,6 +45,9 @@ const withdrawalSchema = new Schema({
     type: String,
     unique: true
   },
+  mpesaConversationId: { type: String },   // B2C ConversationID from Safaricom
+  mpesaOriginatorId: { type: String },     // B2C OriginatorConversationID
+  mpesaReceiptNumber: { type: String },    // receipt after successful B2C
   processedAt: Date,
   notes: String
 }, {

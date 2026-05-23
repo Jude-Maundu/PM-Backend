@@ -30,7 +30,7 @@ export async function getWalletBalance(req, res) {
     console.error("Error fetching wallet balance:", error);
     res.status(500).json({
       message: "Error fetching wallet balance",
-      error: error.message
+      error: process.env.NODE_ENV !== "production" ? error.message : undefined
     });
   }
 }
@@ -95,7 +95,7 @@ export async function getTransactions(req, res) {
     console.error("Error fetching transactions:", error);
     res.status(500).json({
       message: "Error fetching transactions",
-      error: error.message
+      error: process.env.NODE_ENV !== "production" ? error.message : undefined
     });
   }
 }
@@ -133,7 +133,7 @@ export async function addFundsToWallet(req, res) {
     console.error("Error adding funds:", error);
     res.status(500).json({
       message: "Error adding funds",
-      error: error.message
+      error: process.env.NODE_ENV !== "production" ? error.message : undefined
     });
   }
 }

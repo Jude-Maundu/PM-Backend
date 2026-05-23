@@ -256,7 +256,7 @@ export async function createEventAccess(req, res) {
     });
 
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 }
 
@@ -297,7 +297,7 @@ export async function getEventMediaByToken(req, res) {
     });
 
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 }
 
@@ -363,7 +363,7 @@ export async function createAlbum(req, res) {
       body: req.body,
       user: req.user,
     });
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 }
 
@@ -618,7 +618,7 @@ export async function createMedia(req, res) {
     res.status(201).json(media);
 
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 }
 
@@ -695,7 +695,7 @@ export async function bulkUploadAlbumMedia(req, res) {
     res.status(201).json({ success: true, media: uploadedMedia });
   } catch (error) {
     console.error("[bulkUploadAlbumMedia] Error", error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 }
 
@@ -721,7 +721,7 @@ export async function deleteMedia(req, res) {
     res.status(200).json({ message: "Media deleted successfully" });
 
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 }
 
@@ -763,7 +763,7 @@ export async function updateMedia(req, res) {
     res.status(200).json(updatedMedia);
 
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 }
 
@@ -831,7 +831,7 @@ export async function updateMediaPrice(req, res) {
     res.status(200).json({ message: "Price updated", media });
 
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 }
 
@@ -853,7 +853,7 @@ export async function getAlbums(req, res) {
     res.status(200).json(albums);
   } catch (error) {
     console.error("Error fetching albums:", error);
-    res.status(500).json({ message: "Error fetching albums", error: error.message });
+    res.status(500).json({ message: "Error fetching albums", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -885,7 +885,7 @@ export async function getAlbum(req, res) {
     res.status(200).json({ album, media });
   } catch (error) {
     console.error("Error fetching album:", error);
-    res.status(500).json({ message: "Error fetching album", error: error.message });
+    res.status(500).json({ message: "Error fetching album", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -937,7 +937,7 @@ export async function updateAlbum(req, res) {
     res.status(200).json({ message: "Album updated", album });
   } catch (error) {
     console.error("Error updating album:", error);
-    res.status(500).json({ message: "Error updating album", error: error.message });
+    res.status(500).json({ message: "Error updating album", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -967,7 +967,7 @@ export async function deleteAlbum(req, res) {
     res.status(200).json({ message: "Album deleted" });
   } catch (error) {
     console.error("Error deleting album:", error);
-    res.status(500).json({ message: "Error deleting album", error: error.message });
+    res.status(500).json({ message: "Error deleting album", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 export async function likeMedia(req, res) {
@@ -999,7 +999,7 @@ export async function likeMedia(req, res) {
 
   } catch (error) {
     console.error("Error liking media:", error);
-    res.status(500).json({ message: "Error liking media", error: error.message });
+    res.status(500).json({ message: "Error liking media", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -1035,7 +1035,7 @@ export async function unlikeMedia(req, res) {
 
   } catch (error) {
     console.error("Error unliking media:", error);
-    res.status(500).json({ message: "Error unliking media", error: error.message });
+    res.status(500).json({ message: "Error unliking media", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }
 
@@ -1051,7 +1051,7 @@ export async function getTrendingMedia(req, res) {
       .populate("photographer", "username profilePicture");
     res.json({ success: true, media: trending });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 }
 
@@ -1075,7 +1075,7 @@ export async function getSimilarMedia(req, res) {
       .populate("photographer", "username profilePicture");
     res.json({ success: true, media: similar });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 }
 
@@ -1107,7 +1107,7 @@ export async function getMediaByCategory(req, res) {
       .populate("photographer", "username profilePicture");
     res.json({ success: true, media, total: media.length });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ message: "Internal server error" });
   }
 }
 
@@ -1225,6 +1225,6 @@ export async function getLikedMedia(req, res) {
 
   } catch (error) {
     console.error("Error fetching liked media:", error);
-    res.status(500).json({ message: "Error fetching liked media", error: error.message });
+    res.status(500).json({ message: "Error fetching liked media", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
   }
 }

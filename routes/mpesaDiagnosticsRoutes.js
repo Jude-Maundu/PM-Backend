@@ -11,9 +11,9 @@ import {
 
 const router = express.Router();
 
-// Public diagnostics (for debugging)
-router.get("/config/check", checkMpesaConfiguration);
-router.post("/config/test-credentials", testMpesaCredentials);
+// Admin-only diagnostics
+router.get("/config/check", authenticate, requireAdmin, checkMpesaConfiguration);
+router.post("/config/test-credentials", authenticate, requireAdmin, testMpesaCredentials);
 
 // Admin only: View payment status by ID
 router.get("/payments/:checkoutRequestId", authenticate, requireAdmin, getPaymentStatus);

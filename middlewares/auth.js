@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import admin from "firebase-admin";
+import User from "../models/users.js";
 
 let firebaseApp;
 function initFirebaseAdmin() {
@@ -52,6 +53,18 @@ export async function authenticate(req, res, next) {
         return res.status(401).json({ success: false, message: "Invalid token payload: missing user id" });
       }
 
+      // Verify tokenVersion to catch invalidated tokens (password change, ban)
+      if (typeof payload.tokenVersion === 'number') {
+        try {
+          const dbUser = await User.findById(userId).select('tokenVersion isBanned').lean();
+          if (!dbUser) return res.status(401).json({ success: false, message: "User not found" });
+          if (dbUser.isBanned) return res.status(403).json({ success: false, message: "Account suspended" });
+          if (dbUser.tokenVersion !== payload.tokenVersion) {
+            return res.status(401).json({ success: false, message: "Session expired, please log in again" });
+          }
+        } catch (_) { /* DB unavailable — skip version check in dev */ }
+      }
+
       req.user = {
         userId,
         id: userId,
@@ -61,7 +74,6 @@ export async function authenticate(req, res, next) {
         tokenType: "jwt",
       };
 
-      console.log("[auth] JWT authentication succeeded", { userId: req.user.userId, role: req.user.role, endpoint: req.originalUrl });
       return next();
     } catch (err) {
       console.error("[auth] JWT verification failed", err.message);

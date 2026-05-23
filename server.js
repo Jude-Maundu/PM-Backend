@@ -78,18 +78,34 @@ app.use(helmet());
 
 // Rate limiting (after CORS so 429 responses include CORS headers)
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 500, // 500 requests per 15 min per IP (SPA pages fire many concurrent requests)
+  windowMs: 15 * 60 * 1000,
+  max: 200,
   message: { message: "Too many requests, please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
 });
 app.use("/api", limiter);
 
+// Tighter limit for financial / write-heavy endpoints
+const financialLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: { message: "Too many requests on this endpoint, please slow down." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use("/api/payments", financialLimiter);
+app.use("/api/withdrawals", financialLimiter);
+
 // Session middleware for OAuth
+if (!process.env.JWT_SECRET) {
+  console.error("❌ FATAL: JWT_SECRET environment variable is not set. Refusing to start.");
+  process.exit(1);
+}
+
 app.use(
   session({
-    secret: process.env.JWT_SECRET || 'your-secret-key',
+    secret: process.env.JWT_SECRET,
     resave: false,
     saveUninitialized: true,
     cookie: {
@@ -104,15 +120,22 @@ app.use(
   })
 );
 
-// Body parsing middleware
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+// Body parsing middleware (multipart/file uploads handled by multer, not express.json)
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 
-// Serve static files from uploads directory with CORS headers
+// Serve static files from uploads directory — restrict to known frontend origins
+const allowedUploadOrigins = [
+  /^http:\/\/localhost(:[0-9]+)?$/,
+  /^https:\/\/pm-frontend.*\.onrender\.com$/,
+];
 app.use("/uploads", (req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin;
+  if (origin && allowedUploadOrigins.some(p => (typeof p === 'string' ? p === origin : p.test(origin)))) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   next();
 }, express.static(path.join(__dirname, "uploads")));
 
@@ -177,70 +200,19 @@ async function ensureAdminUser() {
       role: "admin"
     });
 
-    console.log(`✅ Created admin user: ${adminEmail} (password: ${adminPassword})`);
+    console.log(`✅ Created admin user: ${adminEmail}`);
   } catch (error) {
     console.error("❌ Failed to create admin user:", error);
   }
 }
 
-// ==================== TEST ROUTES ====================
-app.get("/api/test", (req, res) => {
-  res.json({ message: "Hello from the backend!" });
-});
-
-// Health check endpoint
+// ==================== HEALTH CHECK ====================
 app.get("/api/health", (req, res) => {
-  res.json({
-    status: "healthy",
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime()
-  });
+  res.json({ status: "healthy", timestamp: new Date().toISOString(), uptime: process.uptime() });
 });
 
 app.get("/", (req, res) => {
   res.json({ message: "PhotoMarket API is running" });
-});
-
-// ==================== M-PESA MIDDLEWARE ====================
-// (M-Pesa token generation and callbacks are handled in paymentController.js)
-// Callback route is at: POST /api/payments/callback
-
-// ==================== TEST TOKEN ROUTE ====================
-app.get("/test-token", async (req, res) => {
-  try {
-    const secret = process.env.MPESA_SECRET_KEY;
-    const consumer = process.env.MPESA_CONSUMER_KEY;
-
-    if (!secret || !consumer) {
-      return res.status(500).json({
-        success: false,
-        error: "Credentials not found in .env file"
-      });
-    }
-
-    const auth = Buffer.from(`${consumer}:${secret}`).toString("base64");
-
-    const response = await axios.get(
-      "https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials",
-      {
-        headers: {
-          authorization: `Basic ${auth}`
-        }
-      }
-    );
-
-    res.json({
-      success: true,
-      message: "Token generated successfully",
-      token: response.data.access_token
-    });
-  } catch (error) {
-    console.error("Error:", error.response?.data || error.message);
-    res.status(500).json({
-      success: false,
-      error: error.response?.data || error.message
-    });
-  }
 });
 
 // ==================== MAIN APPLICATION ROUTES ====================
@@ -264,12 +236,18 @@ app.use("/api/proofing", proofingRoutes);
 app.use((err, req, res, next) => {
   if (err.message === "Malformed part header") {
     return res.status(400).json({
-      message:
-        "Malformed multipart request. Do not manually set 'Content-Type: multipart/form-data'. Let the client set it.",
+      message: "Malformed multipart request. Do not manually set 'Content-Type: multipart/form-data'. Let the client set it.",
     });
   }
+  // Multer file-type rejection
+  if (err.message?.startsWith("File type not allowed")) {
+    return res.status(400).json({ message: err.message });
+  }
   console.error("❌ Server Error:", err);
-  res.status(500).json({ message: err.message || "Internal Server Error" });
+  const isDev = process.env.NODE_ENV !== 'production';
+  res.status(err.status || 500).json({
+    message: isDev ? err.message : "Internal Server Error",
+  });
 });
 
 // ------------------- Serve React frontend (fallback for client-side routing) -------------------
@@ -344,10 +322,15 @@ async function dbconnection() {
     await ensureAdminUser();
   } catch (error) {
     console.error("❌ MongoDB connection error:", error.message || error);
-    console.warn("⚠️ Continuing startup without MongoDB. Some features may not work.");
-  } finally {
+    if (process.env.NODE_ENV === 'production') {
+      console.error("❌ Cannot start without database in production. Exiting.");
+      process.exit(1);
+    }
+    console.warn("⚠️ Continuing startup without MongoDB (dev mode only).");
     await startServer();
+    return;
   }
+  await startServer();
 }
 
 dbconnection();

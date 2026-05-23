@@ -45,6 +45,8 @@ const userSchema = new Schema({
   referralCode: { type: String, unique: true, sparse: true },
   referredBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   referralEarnings: { type: Number, default: 0 },
+  // Incremented on password change or account ban to invalidate existing JWTs
+  tokenVersion: { type: Number, default: 0 },
 }, { timestamps: true });
 
 // Indexes for common queries
