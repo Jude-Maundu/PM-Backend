@@ -127,7 +127,7 @@ async function googleAuthCallback(req, res) {
     const user = req.user;
     if (!user) {
       console.error('❌ Google OAuth: No user found after all attempts.');
-      return res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=auth_failed`);
+      return res.redirect(`${(process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '')}/login?error=auth_failed`);
     }
 
     // Generate JWT token
@@ -138,7 +138,7 @@ async function googleAuthCallback(req, res) {
     );
 
     // Redirect to frontend with token
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
     const redirectUrl = `${frontendUrl}/auth/google/callback?token=${token}&user=${encodeURIComponent(JSON.stringify({
       id: user._id,
       username: user.username,
@@ -150,7 +150,7 @@ async function googleAuthCallback(req, res) {
     res.redirect(redirectUrl);
   } catch (error) {
     console.error('Google auth callback error:', error);
-    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=auth_failed`);
+    res.redirect(`${(process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '')}/login?error=auth_failed`);
   }
 }
 
