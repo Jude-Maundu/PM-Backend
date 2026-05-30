@@ -202,7 +202,7 @@ export const emailTemplates = {
    * Password reset email
    */
   passwordResetEmail: (username, resetLink) => ({
-    subject: 'Reset Your PhotoMarket Password',
+    subject: 'Reset Your Relic Snap Password',
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <div style="background: #667eea; padding: 20px; text-align: center; color: white; border-radius: 8px 8px 0 0;">
@@ -211,21 +211,58 @@ export const emailTemplates = {
         <div style="padding: 20px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 0 0 8px 8px;">
           <p style="font-size: 16px; color: #333;">Hi <strong>${username}</strong>,</p>
           <p style="font-size: 14px; color: #555;">We received a request to reset your password. Click the button below to set a new password.</p>
-          
           <div style="text-align: center; margin: 20px 0;">
             <a href="${resetLink}" style="display: inline-block; background: #667eea; color: white; padding: 12px 30px; text-decoration: none; border-radius: 4px; font-weight: bold;">Reset Password</a>
           </div>
-
-          <p style="font-size: 13px; color: #999;">
-            This link will expire in 1 hour. If you didn't request a password reset, please ignore this email.
-          </p>
-          <p style="font-size: 13px; color: #999;">
-            Or copy and paste this link in your browser:<br/>
-            <code style="background: #eee; padding: 5px 10px; border-radius: 3px; display: inline-block; margin-top: 5px; word-break: break-all;">${resetLink}</code>
-          </p>
+          <p style="font-size: 13px; color: #999;">This link expires in 1 hour. If you didn't request this, ignore this email.</p>
+          <p style="font-size: 13px; color: #999;">Or copy this link: <code style="background: #eee; padding: 3px 8px; border-radius: 3px; word-break: break-all;">${resetLink}</code></p>
         </div>
         <div style="text-align: center; padding: 15px; font-size: 12px; color: #999;">
-          <p>© 2026 PhotoMarket. All rights reserved.</p>
+          <p>© 2026 Relic Snap. All rights reserved.</p>
+        </div>
+      </div>
+    `
+  }),
+
+  emailVerificationEmail: (username, verifyLink) => ({
+    subject: 'Verify Your Relic Snap Email',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: #1a6b8a; padding: 20px; text-align: center; color: white; border-radius: 8px 8px 0 0;">
+          <h1 style="margin: 0;">📧 Verify Your Email</h1>
+        </div>
+        <div style="padding: 20px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 0 0 8px 8px;">
+          <p style="font-size: 16px; color: #333;">Hi <strong>${username}</strong>, welcome to Relic Snap!</p>
+          <p style="font-size: 14px; color: #555;">Please verify your email address to activate your account and start exploring Kenya's best photography marketplace.</p>
+          <div style="text-align: center; margin: 24px 0;">
+            <a href="${verifyLink}" style="display: inline-block; background: #1a6b8a; color: white; padding: 14px 36px; text-decoration: none; border-radius: 8px; font-weight: bold; font-size: 16px;">Verify Email</a>
+          </div>
+          <p style="font-size: 13px; color: #999;">This link expires in 24 hours. If you didn't create an account, ignore this email.</p>
+        </div>
+        <div style="text-align: center; padding: 15px; font-size: 12px; color: #999;">
+          <p>© 2026 Relic Snap — Nairobi, Kenya 🇰🇪</p>
+        </div>
+      </div>
+    `
+  }),
+
+  mfaOtpEmail: (username, otp) => ({
+    subject: 'Your Relic Snap Sign-In Code',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: #2c3e50; padding: 20px; text-align: center; color: white; border-radius: 8px 8px 0 0;">
+          <h1 style="margin: 0;">🔐 Sign-In Verification</h1>
+        </div>
+        <div style="padding: 28px 20px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 0 0 8px 8px; text-align: center;">
+          <p style="font-size: 16px; color: #333;">Hi <strong>${username}</strong>, here is your sign-in code:</p>
+          <div style="background: #fff; border: 2px dashed #1a6b8a; border-radius: 12px; padding: 20px; margin: 20px auto; max-width: 240px;">
+            <span style="font-size: 40px; font-weight: 900; letter-spacing: 10px; color: #1a6b8a; font-family: monospace;">${otp}</span>
+          </div>
+          <p style="font-size: 14px; color: #555;">Enter this code on the sign-in page. It expires in <strong>10 minutes</strong>.</p>
+          <p style="font-size: 13px; color: #999;">If you didn't attempt to sign in, your account may be at risk — change your password immediately.</p>
+        </div>
+        <div style="text-align: center; padding: 15px; font-size: 12px; color: #999;">
+          <p>© 2026 Relic Snap — Nairobi, Kenya 🇰🇪</p>
         </div>
       </div>
     `

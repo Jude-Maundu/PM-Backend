@@ -150,9 +150,26 @@ class EmailService {
     }
   }
 
-  /**
-   * Send generic notification email
-   */
+  async sendVerificationEmail(email, username, verifyLink) {
+    try {
+      const template = emailTemplates.emailVerificationEmail(username, verifyLink);
+      return await this.sendEmail(email, template.subject, template.html);
+    } catch (error) {
+      console.error('❌ Verification email failed:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async sendMfaOtp(email, username, otp) {
+    try {
+      const template = emailTemplates.mfaOtpEmail(username, otp);
+      return await this.sendEmail(email, template.subject, template.html);
+    } catch (error) {
+      console.error('❌ MFA OTP email failed:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
   async sendNotificationEmail(email, subject, html) {
     return await this.sendEmail(email, subject, html);
   }

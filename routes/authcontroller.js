@@ -1,7 +1,7 @@
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import passport from '../config/passport.js';
-import {register, login, updatePhotographerPhone, googleAuthCallback, getCurrentUser, changePassword} from '../controllers/authController.js';
+import {register, login, verifyMfa, forgotPassword, resetPassword, sendVerificationEmail, verifyEmail, toggleMfa, updatePhotographerPhone, googleAuthCallback, getCurrentUser, changePassword} from '../controllers/authController.js';
 import { uploadProfile } from '../middlewares/upload.js';
 import { getAllUsers, getUser, updateUser, DeleteUser } from '../controllers/authController.js';
 import { followUser, unfollowUser, getUserFollowers, getUserFollowing, isFollowing } from '../controllers/followController.js';
@@ -20,6 +20,12 @@ const authLimiter = rateLimit({
 // Traditional auth routes
 router.post('/register', authLimiter, uploadProfile.single('profilePicture'), register);
 router.post('/login', authLimiter, login);
+router.post('/verify-mfa', authLimiter, verifyMfa);
+router.post('/forgot-password', authLimiter, forgotPassword);
+router.post('/reset-password', authLimiter, resetPassword);
+router.post('/send-verification', authenticate, sendVerificationEmail);
+router.get('/verify-email', verifyEmail);
+router.post('/toggle-mfa', authenticate, toggleMfa);
 router.get('/me', authenticate, getCurrentUser);
 router.get('/users/me', authenticate, getCurrentUser); // Alias for /me
 

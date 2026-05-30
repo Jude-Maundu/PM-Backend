@@ -1,6 +1,7 @@
 import User from "../models/users.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import emailService from "../services/emailService.js";
 
 const DEFAULT_WATERMARK = "Relic Snap";
@@ -95,10 +96,21 @@ async function login(req, res) {
     const user = await User.findOne({ email });
     if (!user) return res.status(400).json({ message: "Invalid email or password" });
 
+    if (!user.password) return res.status(400).json({ message: "This account uses Google Sign-In. Please continue with Google." });
+
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(400).json({ message: "Invalid email or password" });
 
-    // Generate JWT token
+    // If MFA enabled, send OTP and return partial response
+    if (user.mfaEnabled) {
+      const otp = String(Math.floor(100000 + Math.random() * 900000));
+      user.mfaOtp = await bcrypt.hash(otp, 8);
+      user.mfaOtpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+      await user.save();
+      await emailService.sendMfaOtp(user.email, user.username, otp);
+      return res.status(200).json({ mfaRequired: true, mfaUserId: user._id });
+    }
+
     const token = jwt.sign(
       { userId: user._id, email: user.email, role: user.role, tokenVersion: user.tokenVersion || 0 },
       process.env.JWT_SECRET,
@@ -388,4 +400,136 @@ async function changePassword(req, res) {
   }
 }
 
-export { register, login, getAllUsers, getUser, updateUser, DeleteUser, updatePhotographerPhone, googleAuthCallback, getCurrentUser, changePassword };
+// Verify MFA OTP
+async function verifyMfa(req, res) {
+  try {
+    const { mfaUserId, otp } = req.body;
+    if (!mfaUserId || !otp) return res.status(400).json({ message: "User ID and OTP are required" });
+
+    const user = await User.findById(mfaUserId);
+    if (!user || !user.mfaOtp || !user.mfaOtpExpires) return res.status(400).json({ message: "Invalid or expired code" });
+    if (user.mfaOtpExpires < new Date()) return res.status(400).json({ message: "Code has expired. Please sign in again." });
+
+    const valid = await bcrypt.compare(otp, user.mfaOtp);
+    if (!valid) return res.status(400).json({ message: "Incorrect code" });
+
+    user.mfaOtp = undefined;
+    user.mfaOtpExpires = undefined;
+    await user.save();
+
+    const token = jwt.sign(
+      { userId: user._id, email: user.email, role: user.role, tokenVersion: user.tokenVersion || 0 },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+    const { password: pw, ...safeData } = user._doc;
+    return res.status(200).json({ token, user: safeData });
+  } catch (error) {
+    return res.status(500).json({ error: process.env.NODE_ENV !== "production" ? error.message : undefined });
+  }
+}
+
+// Send email verification
+async function sendVerificationEmail(req, res) {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: "User not found" });
+    if (user.isVerified) return res.status(400).json({ message: "Email already verified" });
+
+    const token = crypto.randomBytes(32).toString("hex");
+    user.emailVerificationToken = token;
+    user.emailVerificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await user.save();
+
+    const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+    const verifyLink = `${frontendUrl}/verify-email?token=${token}`;
+    await emailService.sendVerificationEmail(user.email, user.username, verifyLink);
+
+    return res.json({ message: "Verification email sent" });
+  } catch (error) {
+    return res.status(500).json({ error: process.env.NODE_ENV !== "production" ? error.message : undefined });
+  }
+}
+
+// Confirm email verification from link
+async function verifyEmail(req, res) {
+  try {
+    const { token } = req.query;
+    if (!token) return res.status(400).json({ message: "Token required" });
+
+    const user = await User.findOne({ emailVerificationToken: token, emailVerificationExpires: { $gt: new Date() } });
+    if (!user) return res.status(400).json({ message: "Invalid or expired verification link" });
+
+    user.isVerified = true;
+    user.emailVerificationToken = undefined;
+    user.emailVerificationExpires = undefined;
+    await user.save();
+
+    return res.json({ message: "Email verified successfully" });
+  } catch (error) {
+    return res.status(500).json({ error: process.env.NODE_ENV !== "production" ? error.message : undefined });
+  }
+}
+
+// Forgot password — send reset link
+async function forgotPassword(req, res) {
+  try {
+    const { email } = req.body;
+    const user = await User.findOne({ email });
+    // Always respond 200 to prevent email enumeration
+    if (!user || !user.password) return res.json({ message: "If that email exists, a reset link has been sent." });
+
+    const token = crypto.randomBytes(32).toString("hex");
+    user.passwordResetToken = token;
+    user.passwordResetExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    await user.save();
+
+    const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+    const resetLink = `${frontendUrl}/reset-password?token=${token}`;
+    await emailService.sendPasswordResetEmail(user.email, user.username, resetLink);
+
+    return res.json({ message: "If that email exists, a reset link has been sent." });
+  } catch (error) {
+    return res.status(500).json({ error: process.env.NODE_ENV !== "production" ? error.message : undefined });
+  }
+}
+
+// Reset password with token
+async function resetPassword(req, res) {
+  try {
+    const { token, password } = req.body;
+    if (!token || !password) return res.status(400).json({ message: "Token and new password are required" });
+    if (password.length < 6) return res.status(400).json({ message: "Password must be at least 6 characters" });
+
+    const user = await User.findOne({ passwordResetToken: token, passwordResetExpires: { $gt: new Date() } });
+    if (!user) return res.status(400).json({ message: "Invalid or expired reset link" });
+
+    user.password = await bcrypt.hash(password, 10);
+    user.passwordResetToken = undefined;
+    user.passwordResetExpires = undefined;
+    user.tokenVersion = (user.tokenVersion || 0) + 1; // invalidate existing JWTs
+    await user.save();
+
+    return res.json({ message: "Password reset successfully. You can now sign in." });
+  } catch (error) {
+    return res.status(500).json({ error: process.env.NODE_ENV !== "production" ? error.message : undefined });
+  }
+}
+
+// Toggle MFA for authenticated user
+async function toggleMfa(req, res) {
+  try {
+    const userId = req.user?.userId || req.user?.id;
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    user.mfaEnabled = !user.mfaEnabled;
+    await user.save();
+    return res.json({ mfaEnabled: user.mfaEnabled, message: `MFA ${user.mfaEnabled ? 'enabled' : 'disabled'}` });
+  } catch (error) {
+    return res.status(500).json({ error: process.env.NODE_ENV !== "production" ? error.message : undefined });
+  }
+}
+
+export { register, login, verifyMfa, forgotPassword, resetPassword, sendVerificationEmail, verifyEmail, toggleMfa, getAllUsers, getUser, updateUser, DeleteUser, updatePhotographerPhone, googleAuthCallback, getCurrentUser, changePassword };

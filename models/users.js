@@ -65,6 +65,19 @@ const userSchema = new Schema({
   referralEarnings: { type: Number, default: 0 },
   // Incremented on password change or account ban to invalidate existing JWTs
   tokenVersion: { type: Number, default: 0 },
+
+  // Password reset
+  passwordResetToken:   { type: String },
+  passwordResetExpires: { type: Date },
+
+  // Email verification
+  emailVerificationToken:   { type: String },
+  emailVerificationExpires: { type: Date },
+
+  // MFA (email OTP)
+  mfaEnabled:    { type: Boolean, default: false },
+  mfaOtp:        { type: String },
+  mfaOtpExpires: { type: Date },
 }, { timestamps: true });
 
 // Indexes for common queries
