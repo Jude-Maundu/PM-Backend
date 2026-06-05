@@ -324,30 +324,39 @@ export const broadcastNotification = async (req, res) => {
 
     const inserted = await Notification.insertMany(docs, { ordered: false });
 
-    // Respond immediately — email sending is fire-and-forget
+    // Respond before starting emails so the client isn't waiting
     res.status(200).json({ message: `Notification sent to ${inserted.length} user(s)`, sent: inserted.length });
 
-    // Send emails in the background (best-effort, max 200 per broadcast)
-    const emailRecipients  = recipients.slice(0, 200);
-    const emailRecipientIds = emailRecipients.map(r => r._id);
-    const usersWithEmail   = await User.find({ _id: { $in: emailRecipientIds }, email: { $exists: true } })
+    // Fire-and-forget emails — wrapped in its own try so it can never call res.json() again
+    sendBroadcastEmails(recipients, { title, message, actionUrl, actionLabel });
+  } catch (err) {
+    console.error("Error broadcasting notification:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Failed to broadcast notification" });
+    }
+  }
+};
+
+async function sendBroadcastEmails(recipients, { title, message, actionUrl, actionLabel }) {
+  try {
+    const emailRecipientIds = recipients.slice(0, 200).map(r => r._id);
+    const usersWithEmail = await User.find({ _id: { $in: emailRecipientIds }, email: { $exists: true } })
       .select("email username name")
       .lean();
 
     const template = emailTemplates.broadcastEmail;
-    const emailJobs = usersWithEmail.map(u =>
+    const jobs = usersWithEmail.map(u =>
       emailService.sendEmail(
         u.email,
         template(u.username || u.name, title, message, actionUrl, actionLabel).subject,
         template(u.username || u.name, title, message, actionUrl, actionLabel).html,
-      ).catch(err => console.warn(`[broadcast] email failed for ${u.email}:`, err.message))
+      ).catch(e => console.warn(`[broadcast] email failed for ${u.email}:`, e.message))
     );
-    Promise.allSettled(emailJobs);
-  } catch (err) {
-    console.error("Error broadcasting notification:", err);
-    res.status(500).json({ error: "Failed to broadcast notification" });
+    await Promise.allSettled(jobs);
+  } catch (e) {
+    console.error("[broadcast] email batch failed:", e.message);
   }
-};
+}
 
 // Admin: Get all admin-sent broadcast notifications (history)
 export const getBroadcastHistory = async (req, res) => {
