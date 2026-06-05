@@ -3,7 +3,7 @@ import bcrypt from "bcrypt";
 import os from "os";
 import { authenticate } from "../middlewares/auth.js";
 import { requireAdmin } from "../middlewares/admin.js";
-import { requireReviewer, requireSupport, logAdminAction } from "../middlewares/staff.js";
+import { requireReviewer, requireSupport, requireStaff, logAdminAction } from "../middlewares/staff.js";
 import {
   getAllMediaAdmin,
   getAllAlbumsAdmin,
@@ -23,22 +23,23 @@ import PhotographerApplication from "../models/PhotographerApplication.js";
 
 const router = express.Router();
 
-// All admin routes require authentication and admin role
-router.use(authenticate, requireAdmin);
+// All admin routes require authentication + at minimum staff role.
+// Destructive/write endpoints individually require requireAdmin below.
+router.use(authenticate, requireStaff);
 
 // ==================== CONTENT MANAGEMENT ====================
 router.get("/media", getAllMediaAdmin);
 router.get("/albums", getAllAlbumsAdmin);
 router.get("/media/:mediaId/details", getMediaDetailsAdmin);
 router.get("/albums/:albumId/details", getAlbumDetailsAdmin);
-router.delete("/media/:mediaId", deleteMediaAdmin);
-router.delete("/albums/:albumId", deleteAlbumAdmin);
+router.delete("/media/:mediaId", requireAdmin, deleteMediaAdmin);
+router.delete("/albums/:albumId", requireAdmin, deleteAlbumAdmin);
 
 // ==================== STATISTICS & ANALYTICS ====================
 router.get("/stats/overview", getPlatformStatsAdmin);
 
 // ==================== USER MANAGEMENT ====================
-router.patch("/users/:id/ban", async (req, res) => {
+router.patch("/users/:id/ban", requireAdmin, async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ message: "User not found" });
@@ -52,7 +53,7 @@ router.patch("/users/:id/ban", async (req, res) => {
   }
 });
 
-router.patch("/users/:id/role", async (req, res) => {
+router.patch("/users/:id/role", requireAdmin, async (req, res) => {
   try {
     const { role } = req.body;
     const allowed = ["admin", "photographer", "user", "institution"];
@@ -65,7 +66,7 @@ router.patch("/users/:id/role", async (req, res) => {
   }
 });
 
-router.patch("/users/:id/verify", async (req, res) => {
+router.patch("/users/:id/verify", requireAdmin, async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ message: "User not found" });
@@ -79,7 +80,7 @@ router.patch("/users/:id/verify", async (req, res) => {
 
 // ==================== WITHDRAWAL MANAGEMENT ====================
 router.get("/withdrawals", getAllWithdrawals);
-router.put("/withdrawals/:withdrawalId/process", processWithdrawal);
+router.put("/withdrawals/:withdrawalId/process", requireAdmin, processWithdrawal);
 
 // ==================== SHARE LINK MANAGEMENT ====================
 router.get("/shares", async (req, res) => {
@@ -96,7 +97,7 @@ router.get("/shares", async (req, res) => {
   }
 });
 
-router.delete("/shares/:token", async (req, res) => {
+router.delete("/shares/:token", requireAdmin, async (req, res) => {
   try {
     const share = await ShareToken.findOne({ token: req.params.token });
     if (!share) return res.status(404).json({ message: "Share not found" });
@@ -120,7 +121,7 @@ router.get("/wallets", async (req, res) => {
   }
 });
 
-router.post("/wallets/:userId/adjust", async (req, res) => {
+router.post("/wallets/:userId/adjust", requireAdmin, async (req, res) => {
   try {
     const { amount, reason } = req.body;
     if (!amount || isNaN(amount)) return res.status(400).json({ message: "Valid amount required" });
@@ -232,7 +233,7 @@ router.get("/moderation", async (req, res) => {
 });
 
 // PATCH /api/admin/moderation/:id/approve
-router.patch("/moderation/:id/approve", async (req, res) => {
+router.patch("/moderation/:id/approve", requireAdmin, async (req, res) => {
   try {
     const Media = (await import("../models/media.js")).default;
     const media = await Media.findByIdAndUpdate(
@@ -246,7 +247,7 @@ router.patch("/moderation/:id/approve", async (req, res) => {
 });
 
 // PATCH /api/admin/moderation/:id/reject
-router.patch("/moderation/:id/reject", async (req, res) => {
+router.patch("/moderation/:id/reject", requireAdmin, async (req, res) => {
   try {
     const Media = (await import("../models/media.js")).default;
     const media = await Media.findByIdAndUpdate(
@@ -260,7 +261,7 @@ router.patch("/moderation/:id/reject", async (req, res) => {
 });
 
 // POST /api/admin/moderation/:id/flag — flag media (requires authentication; requireAdmin applied by router.use above)
-router.post("/moderation/:id/flag", async (req, res) => {
+router.post("/moderation/:id/flag", requireAdmin, async (req, res) => {
   try {
     const Media = (await import("../models/media.js")).default;
     const media = await Media.findByIdAndUpdate(
@@ -384,7 +385,7 @@ router.get("/config", async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-router.patch("/config/:key", logAdminAction('update_config', 'SystemConfig'), async (req, res) => {
+router.patch("/config/:key", requireAdmin, logAdminAction('update_config', 'SystemConfig'), async (req, res) => {
   try {
     const { value } = req.body;
     if (value === undefined) return res.status(400).json({ message: 'value is required' });
@@ -395,7 +396,7 @@ router.patch("/config/:key", logAdminAction('update_config', 'SystemConfig'), as
 });
 
 // Bulk update config
-router.put("/config", logAdminAction('bulk_update_config', 'SystemConfig'), async (req, res) => {
+router.put("/config", requireAdmin, logAdminAction('bulk_update_config', 'SystemConfig'), async (req, res) => {
   try {
     const { configs } = req.body; // [{ key, value }]
     if (!Array.isArray(configs)) return res.status(400).json({ message: 'configs array required' });
@@ -422,7 +423,7 @@ router.get("/applications", async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-router.patch("/applications/:id/approve", logAdminAction('approve_application', 'PhotographerApplication'), async (req, res) => {
+router.patch("/applications/:id/approve", requireAdmin, logAdminAction('approve_application', 'PhotographerApplication'), async (req, res) => {
   try {
     const app = await PhotographerApplication.findById(req.params.id).populate('user');
     if (!app) return res.status(404).json({ message: 'Application not found' });
@@ -441,7 +442,7 @@ router.patch("/applications/:id/approve", logAdminAction('approve_application', 
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-router.patch("/applications/:id/reject", logAdminAction('reject_application', 'PhotographerApplication'), async (req, res) => {
+router.patch("/applications/:id/reject", requireAdmin, logAdminAction('reject_application', 'PhotographerApplication'), async (req, res) => {
   try {
     const app = await PhotographerApplication.findById(req.params.id);
     if (!app) return res.status(404).json({ message: 'Application not found' });
@@ -488,7 +489,7 @@ router.get("/staff", async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-router.post("/staff", logAdminAction('create_staff', 'User'), async (req, res) => {
+router.post("/staff", requireAdmin, logAdminAction('create_staff', 'User'), async (req, res) => {
   try {
     const { username, email, password, role, permissions = {} } = req.body;
     if (!['reviewer', 'support'].includes(role))
@@ -510,7 +511,7 @@ router.post("/staff", logAdminAction('create_staff', 'User'), async (req, res) =
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-router.patch("/staff/:id/permissions", logAdminAction('update_staff_permissions', 'User'), async (req, res) => {
+router.patch("/staff/:id/permissions", requireAdmin, logAdminAction('update_staff_permissions', 'User'), async (req, res) => {
   try {
     const { permissions, role } = req.body;
     const update = {};
@@ -525,7 +526,7 @@ router.patch("/staff/:id/permissions", logAdminAction('update_staff_permissions'
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-router.delete("/staff/:id", logAdminAction('remove_staff', 'User'), async (req, res) => {
+router.delete("/staff/:id", requireAdmin, logAdminAction('remove_staff', 'User'), async (req, res) => {
   try {
     const staff = await User.findById(req.params.id);
     if (!staff) return res.status(404).json({ message: 'Staff not found' });
@@ -554,7 +555,7 @@ router.get("/kyc", async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-router.patch("/kyc/:userId/verify", logAdminAction('kyc_verify', 'User'), async (req, res) => {
+router.patch("/kyc/:userId/verify", requireAdmin, logAdminAction('kyc_verify', 'User'), async (req, res) => {
   try {
     const user = await User.findByIdAndUpdate(req.params.userId,
       { kycStatus: 'verified', kycReviewedAt: new Date(), kycRejectionReason: '' },
@@ -565,7 +566,7 @@ router.patch("/kyc/:userId/verify", logAdminAction('kyc_verify', 'User'), async 
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-router.patch("/kyc/:userId/reject", logAdminAction('kyc_reject', 'User'), async (req, res) => {
+router.patch("/kyc/:userId/reject", requireAdmin, logAdminAction('kyc_reject', 'User'), async (req, res) => {
   try {
     const { reason = 'Documents unclear or invalid' } = req.body;
     const user = await User.findByIdAndUpdate(req.params.userId,
@@ -579,7 +580,7 @@ router.patch("/kyc/:userId/reject", logAdminAction('kyc_reject', 'User'), async 
 
 // ==================== DYNAMIC COMMISSION ====================
 
-router.patch("/users/:id/commission", logAdminAction('update_commission', 'User'), async (req, res) => {
+router.patch("/users/:id/commission", requireAdmin, logAdminAction('update_commission', 'User'), async (req, res) => {
   try {
     const { rate } = req.body;
     if (rate !== null && (isNaN(rate) || rate < 0 || rate > 100))
@@ -594,7 +595,7 @@ router.patch("/users/:id/commission", logAdminAction('update_commission', 'User'
 
 // ==================== SYSTEM RESET ====================
 
-router.post("/system/reset", async (req, res) => {
+router.post("/system/reset", requireAdmin, async (req, res) => {
   try {
     const { password, confirmPhrase } = req.body;
 

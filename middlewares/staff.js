@@ -1,5 +1,7 @@
 import AdminLog from '../models/AdminLog.js';
 
+const STAFF_ROLES = ['admin', 'reviewer', 'support', 'secretary', 'engineer', 'marketing'];
+
 // Allow admin + reviewer
 export function requireReviewer(req, res, next) {
   const role = req.user?.role;
@@ -7,10 +9,17 @@ export function requireReviewer(req, res, next) {
   return res.status(403).json({ message: 'Reviewer access required' });
 }
 
-// Allow admin + reviewer + support
+// Allow admin + all staff roles
 export function requireSupport(req, res, next) {
   const role = req.user?.role;
-  if (role === 'admin' || role === 'reviewer' || role === 'support') return next();
+  if (STAFF_ROLES.includes(role)) return next();
+  return res.status(403).json({ message: 'Staff access required' });
+}
+
+// Allow any authenticated staff member (secretary, engineer, marketing, reviewer, support, admin)
+export function requireStaff(req, res, next) {
+  const role = req.user?.role;
+  if (STAFF_ROLES.includes(role)) return next();
   return res.status(403).json({ message: 'Staff access required' });
 }
 
