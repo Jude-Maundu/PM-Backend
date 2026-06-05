@@ -1,6 +1,7 @@
 import express from "express";
 import { authenticate } from "../middlewares/auth.js";
 import { requireAdmin } from "../middlewares/admin.js";
+import { requireStaff } from "../middlewares/staff.js";
 import {
   getNotifications,
   markNotificationAsRead,
@@ -10,6 +11,8 @@ import {
   searchUsers,
   adminGetAllShares,
   adminGetNotificationStats,
+  broadcastNotification,
+  getBroadcastHistory,
 } from "../controllers/notificationController.js";
 
 const router = express.Router();
@@ -36,7 +39,13 @@ router.get("/share/search-recipients", authenticate, searchUsers);
 // Send share link to specific user(s)
 router.post("/share/send", authenticate, sendShareToUsers);
 
-// ============ ADMIN ENDPOINTS ============
+// ============ ADMIN / STAFF ENDPOINTS ============
+
+// Broadcast a notification to a user group (all staff roles)
+router.post("/admin/broadcast", authenticate, requireStaff, broadcastNotification);
+
+// Get broadcast history (all staff roles)
+router.get("/admin/broadcast/history", authenticate, requireStaff, getBroadcastHistory);
 
 // Get all shares (admin only)
 router.get("/admin/shares", authenticate, requireAdmin, adminGetAllShares);

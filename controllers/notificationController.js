@@ -267,6 +267,113 @@ export const adminGetAllShares = async (req, res) => {
   }
 };
 
+// Staff/Admin: Broadcast notification to user groups or specific users
+export const broadcastNotification = async (req, res) => {
+  try {
+    const senderId = req.user.id;
+    const {
+      target,          // "all" | "buyers" | "photographers" | "specific"
+      recipientIds,    // array of user IDs (required when target === "specific")
+      title,
+      message,
+      priority = "normal",
+      actionUrl,
+      actionLabel,
+    } = req.body;
+
+    if (!title || !message) {
+      return res.status(400).json({ error: "title and message are required" });
+    }
+
+    const validTargets = ["all", "buyers", "photographers", "specific"];
+    if (!validTargets.includes(target)) {
+      return res.status(400).json({ error: `target must be one of: ${validTargets.join(", ")}` });
+    }
+
+    let recipients = [];
+
+    if (target === "specific") {
+      if (!Array.isArray(recipientIds) || recipientIds.length === 0) {
+        return res.status(400).json({ error: "recipientIds must be a non-empty array when target is 'specific'" });
+      }
+      recipients = await User.find({ _id: { $in: recipientIds } }).select("_id").lean();
+    } else {
+      const roleFilter =
+        target === "buyers"        ? { role: { $in: ["buyer", "user"] } } :
+        target === "photographers" ? { role: "photographer" }             :
+        {};                                                               // "all"
+      recipients = await User.find(roleFilter).select("_id").lean();
+    }
+
+    if (recipients.length === 0) {
+      return res.status(200).json({ message: "No recipients found", sent: 0 });
+    }
+
+    const docs = recipients.map(r => ({
+      recipient: r._id,
+      sender: senderId,
+      type: "admin",
+      title,
+      message,
+      priority,
+      ...(actionUrl   && { actionUrl }),
+      ...(actionLabel && { actionLabel }),
+    }));
+
+    const inserted = await Notification.insertMany(docs, { ordered: false });
+
+    res.status(200).json({ message: `Notification sent to ${inserted.length} user(s)`, sent: inserted.length });
+  } catch (err) {
+    console.error("Error broadcasting notification:", err);
+    res.status(500).json({ error: "Failed to broadcast notification" });
+  }
+};
+
+// Admin: Get all admin-sent broadcast notifications (history)
+export const getBroadcastHistory = async (req, res) => {
+  try {
+    const { limit = 30, skip = 0 } = req.query;
+
+    // Get unique broadcasts by grouping by sender+title+createdAt (approximate)
+    // We fetch distinct admin-type notifications sent by staff, most recent first
+    const history = await Notification.aggregate([
+      { $match: { type: "admin" } },
+      { $sort: { createdAt: -1 } },
+      {
+        $group: {
+          _id: { title: "$title", sender: "$sender", createdAt: { $dateToString: { format: "%Y-%m-%dT%H:%M", date: "$createdAt" } } },
+          title:      { $first: "$title"      },
+          message:    { $first: "$message"    },
+          priority:   { $first: "$priority"   },
+          actionUrl:  { $first: "$actionUrl"  },
+          sender:     { $first: "$sender"     },
+          sentAt:     { $first: "$createdAt"  },
+          totalSent:  { $sum: 1               },
+          readCount:  { $sum: { $cond: ["$isRead", 1, 0] } },
+        },
+      },
+      { $sort: { sentAt: -1 } },
+      { $skip: parseInt(skip) },
+      { $limit: parseInt(limit) },
+      {
+        $lookup: {
+          from: "users",
+          localField: "sender",
+          foreignField: "_id",
+          pipeline: [{ $project: { username: 1, email: 1 } }],
+          as: "senderInfo",
+        },
+      },
+      { $unwind: { path: "$senderInfo", preserveNullAndEmptyArrays: true } },
+    ]);
+
+    res.status(200).json({ history });
+  } catch (err) {
+    console.error("Error fetching broadcast history:", err);
+    res.status(500).json({ error: "Failed to fetch broadcast history" });
+  }
+};
+
 // Admin: Get unread notification counts for all users
 export const adminGetNotificationStats = async (req, res) => {
   try {
