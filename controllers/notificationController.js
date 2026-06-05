@@ -328,9 +328,9 @@ export const broadcastNotification = async (req, res) => {
     res.status(200).json({ message: `Notification sent to ${inserted.length} user(s)`, sent: inserted.length });
 
     // Send emails in the background (best-effort, max 200 per broadcast)
-    const emailRecipients = recipients.slice(0, 200);
-    const recipientIds    = emailRecipients.map(r => r._id);
-    const usersWithEmail  = await User.find({ _id: { $in: recipientIds }, email: { $exists: true } })
+    const emailRecipients  = recipients.slice(0, 200);
+    const emailRecipientIds = emailRecipients.map(r => r._id);
+    const usersWithEmail   = await User.find({ _id: { $in: emailRecipientIds }, email: { $exists: true } })
       .select("email username name")
       .lean();
 
