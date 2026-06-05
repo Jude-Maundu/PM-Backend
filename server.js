@@ -61,6 +61,7 @@ app.use(
   cors({
     origin: [
       /^http:\/\/localhost(:[0-9]+)?$/,
+      "https://relicsnap.onrender.com",
       "https://pm-frontend-3buw.onrender.com",
       "https://pm-frontend-f3b6.onrender.com",
       "https://pm-backend-1-u2y3.onrender.com",
