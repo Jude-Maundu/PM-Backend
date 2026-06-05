@@ -2,6 +2,8 @@ import Notification from "../models/Notification.js";
 import User from "../models/users.js";
 import Media from "../models/media.js";
 import ShareToken from "../models/ShareToken.js";
+import emailService from "../services/emailService.js";
+import { emailTemplates } from "../services/emailTemplates.js";
 
 // Get user's notifications
 export const getNotifications = async (req, res) => {
@@ -322,7 +324,25 @@ export const broadcastNotification = async (req, res) => {
 
     const inserted = await Notification.insertMany(docs, { ordered: false });
 
+    // Respond immediately — email sending is fire-and-forget
     res.status(200).json({ message: `Notification sent to ${inserted.length} user(s)`, sent: inserted.length });
+
+    // Send emails in the background (best-effort, max 200 per broadcast)
+    const emailRecipients = recipients.slice(0, 200);
+    const recipientIds    = emailRecipients.map(r => r._id);
+    const usersWithEmail  = await User.find({ _id: { $in: recipientIds }, email: { $exists: true } })
+      .select("email username name")
+      .lean();
+
+    const template = emailTemplates.broadcastEmail;
+    const emailJobs = usersWithEmail.map(u =>
+      emailService.sendEmail(
+        u.email,
+        template(u.username || u.name, title, message, actionUrl, actionLabel).subject,
+        template(u.username || u.name, title, message, actionUrl, actionLabel).html,
+      ).catch(err => console.warn(`[broadcast] email failed for ${u.email}:`, err.message))
+    );
+    Promise.allSettled(emailJobs);
   } catch (err) {
     console.error("Error broadcasting notification:", err);
     res.status(500).json({ error: "Failed to broadcast notification" });

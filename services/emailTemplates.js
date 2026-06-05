@@ -246,6 +246,31 @@ export const emailTemplates = {
     `
   }),
 
+  broadcastEmail: (username, title, message, actionUrl, actionLabel) => ({
+    subject: `[Relic Snap] ${title}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; text-align: center; color: white; border-radius: 8px 8px 0 0;">
+          <h1 style="margin: 0; font-size: 22px;">${title}</h1>
+        </div>
+        <div style="padding: 24px 20px; background: #f9f9f9; border: 1px solid #ddd; border-radius: 0 0 8px 8px;">
+          <p style="font-size: 15px; color: #333;">Hi <strong>${username || 'there'}</strong>,</p>
+          <p style="font-size: 14px; color: #555; line-height: 1.7; white-space: pre-wrap;">${message}</p>
+          ${actionUrl ? `
+          <div style="text-align: center; margin: 24px 0;">
+            <a href="${actionUrl}" style="display: inline-block; background: #667eea; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold;">${actionLabel || 'View Now'}</a>
+          </div>` : ''}
+          <p style="font-size: 13px; color: #999; margin-top: 20px;">
+            This message was sent to you by the Relic Snap team. You received it because you are a registered user.
+          </p>
+        </div>
+        <div style="text-align: center; padding: 15px; font-size: 12px; color: #999;">
+          <p>© 2026 Relic Snap — Nairobi, Kenya</p>
+        </div>
+      </div>
+    `
+  }),
+
   mfaOtpEmail: (username, otp) => ({
     subject: 'Your Relic Snap Sign-In Code',
     html: `
