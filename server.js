@@ -36,6 +36,7 @@ import portfolioRoutes from "./routes/portfolioRoutes.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
 import referralRoutes from "./routes/referralRoutes.js";
 import proofingRoutes from "./routes/proofingRoutes.js";
+import sitemapRoute from "./routes/sitemapRoute.js";
 import { processPendingB2cRetries } from "./controllers/paymentController.js";
 import emailService from "./services/emailService.js";
 import { initializeSocket } from "./services/socketService.js";
@@ -218,6 +219,7 @@ app.get("/", (req, res) => {
 });
 
 // ==================== MAIN APPLICATION ROUTES ====================
+app.use("/", sitemapRoute);      // /sitemap.xml — no /api prefix for crawlers
 app.use("/api/auth", authRouter);
 app.use("/api/media", mediaRouter);
 app.use("/api/payments", paymentRouter);
