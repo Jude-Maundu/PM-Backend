@@ -1045,7 +1045,7 @@ export async function unlikeMedia(req, res) {
 export async function getTrendingMedia(req, res) {
   try {
     const { limit = 20 } = req.query;
-    const trending = await Media.find({ isPrivate: { $ne: true } })
+    const trending = await Media.find({ isPrivate: { $ne: true }, isApproved: true })
       .sort({ viewCount: -1, createdAt: -1 })
       .limit(parseInt(limit))
       .populate("photographer", "username profilePicture");
@@ -1086,7 +1086,7 @@ export async function getMediaByCategory(req, res) {
   try {
     const { category } = req.params;
     const { search, minPrice, maxPrice, license, sort = "newest", limit = 40 } = req.query;
-    const query = {};
+    const query = { isApproved: true };
     if (category && category !== "all") query.category = category;
     if (search) query.$or = [
       { title: { $regex: search, $options: "i" } },
@@ -1226,5 +1226,57 @@ export async function getLikedMedia(req, res) {
   } catch (error) {
     console.error("Error fetching liked media:", error);
     res.status(500).json({ message: "Error fetching liked media", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
+  }
+}
+
+// ==============================
+// Admin: Get pending (unapproved) media
+// ==============================
+export async function getPendingMedia(req, res) {
+  try {
+    const { page = 1, limit = 30 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const [media, total] = await Promise.all([
+      Media.find({ isApproved: false })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit))
+        .populate("photographer", "username profilePicture email"),
+      Media.countDocuments({ isApproved: false }),
+    ]);
+    res.json({ success: true, media, total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) });
+  } catch (err) {
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+// ==============================
+// Admin: Approve media
+// ==============================
+export async function approveMedia(req, res) {
+  try {
+    const { id } = req.params;
+    const media = await Media.findByIdAndUpdate(id, { isApproved: true, rejectionReason: "" }, { new: true })
+      .populate("photographer", "username email");
+    if (!media) return res.status(404).json({ message: "Media not found" });
+    res.json({ success: true, message: "Photo approved", media });
+  } catch (err) {
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+// ==============================
+// Admin: Reject media
+// ==============================
+export async function rejectMedia(req, res) {
+  try {
+    const { id } = req.params;
+    const { reason = "" } = req.body;
+    const media = await Media.findByIdAndUpdate(id, { isApproved: false, rejectionReason: reason }, { new: true })
+      .populate("photographer", "username email");
+    if (!media) return res.status(404).json({ message: "Media not found" });
+    res.json({ success: true, message: "Photo rejected", media });
+  } catch (err) {
+    res.status(500).json({ message: "Internal server error" });
   }
 }

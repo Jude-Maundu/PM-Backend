@@ -26,13 +26,17 @@ import {
   getTrendingMedia,
   getSimilarMedia,
   getMediaByCategory,
-  faceSearch
+  faceSearch,
+  getPendingMedia,
+  approveMedia,
+  rejectMedia
 } from "../controllers/MediaController.js";
 import { addMediaToAlbum, removeMediaFromAlbum, getAlbumMedia } from "../controllers/albumController.js";
 
 import { uploadPhoto } from "../middlewares/upload.js";
 import { authenticate } from "../middlewares/auth.js";
 import { requirePhotographer } from "../middlewares/photographer.js";
+import { requireStaff } from "../middlewares/staff.js";
 
 // Memory-storage multer for face search (Rekognition needs raw bytes via req.file.buffer)
 const memoryUpload = multer({
@@ -114,6 +118,11 @@ router.post("/", authenticate, uploadLimiter, uploadPhoto.single("file"), create
 router.put("/:id", authenticate, uploadLimiter, uploadPhoto.single("file"), updateMedia);
 router.put("/:id/price", authenticate, updateMediaPrice);
 router.delete("/:id", authenticate, deleteMedia);
+
+// Admin: photo approval queue
+router.get("/admin/pending",        authenticate, requireStaff, getPendingMedia);
+router.patch("/:id/approve",        authenticate, requireStaff, approveMedia);
+router.patch("/:id/reject",         authenticate, requireStaff, rejectMedia);
 
 export default router;
 
