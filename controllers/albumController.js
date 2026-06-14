@@ -441,10 +441,13 @@ export async function addMediaToAlbum(req, res) {
       });
     }
 
-    // Add media to album
+    // Add media to album and back-link the media document
     album.media.push(mediaId);
     album.mediaCount = (album.mediaCount || 0) + 1;
-    await album.save();
+    await Promise.all([
+      album.save(),
+      Media.findByIdAndUpdate(mediaId, { album: albumId })
+    ]);
 
     res.status(200).json({
       success: true,
@@ -475,10 +478,13 @@ export async function removeMediaFromAlbum(req, res) {
       });
     }
 
-    // Remove media from album
+    // Remove media from album and clear the back-link
     album.media = album.media.filter(id => id.toString() !== mediaId);
     album.mediaCount = Math.max((album.mediaCount || 0) - 1, 0);
-    await album.save();
+    await Promise.all([
+      album.save(),
+      Media.findByIdAndUpdate(mediaId, { album: null })
+    ]);
 
     res.status(200).json({
       success: true,

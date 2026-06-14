@@ -8,7 +8,9 @@ import {
   getShareStats,
   shareAlbumWithBuyer,
   purchaseViaShare,
-  checkGuestPaymentStatus
+  checkGuestPaymentStatus,
+  guestBuyPublicAlbum,
+  checkDirectGuestStatus
 } from "../controllers/shareController.js";
 import { authenticate } from "../middlewares/auth.js";
 
@@ -22,6 +24,8 @@ router.get("/:token/stats", authenticate, getShareStats);
 router.delete("/:token/revoke", authenticate, revokeShareLink);
 
 // Public routes - no auth required
+router.post("/guest-buy", guestBuyPublicAlbum);
+router.get("/guest-status/:requestId", checkDirectGuestStatus);
 router.get("/:token", accessSharedMedia);
 router.get("/:token/download", downloadViaShareLink);
 router.post("/:token/purchase", purchaseViaShare);

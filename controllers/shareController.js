@@ -219,17 +219,27 @@ export async function accessSharedMedia(req, res) {
     }
 
     if (shareToken.album) {
-      const albumDoc = typeof shareToken.album === "object" ? shareToken.album : await Album.findById(shareToken.album);
+      const albumId = typeof shareToken.album === "object" ? shareToken.album._id : shareToken.album;
+      const albumDoc = await Album.findById(albumId)
+        .populate({
+          path: "media",
+          populate: { path: "photographer", select: "username email" }
+        });
+
       if (albumDoc) {
-        const items = await Media.find({ album: albumDoc._id })
+        // Also catch any media that has album field set but isn't in the array yet
+        const fromField = await Media.find({ album: albumId, _id: { $nin: albumDoc.media.map(m => m._id) } })
           .populate("photographer", "username email");
+
+        const allMedia = [...albumDoc.media, ...fromField];
 
         responseData.album = {
           ...albumDoc.toObject(),
           coverImage: normalizeFileUrl(albumDoc.coverImage),
-          media: items.map((item) => ({
+          media: allMedia.map((item) => ({
             ...item.toObject(),
-            fileUrl: normalizeFileUrl(item.fileUrl)
+            fileUrl: normalizeFileUrl(item.fileUrl),
+            watermarkedUrl: normalizeFileUrl(item.watermarkedUrl)
           }))
         };
       }
@@ -677,6 +687,143 @@ export async function checkGuestPaymentStatus(req, res) {
     return res.status(200).json({ success: true, status: "pending", message: "Waiting for payment confirmation..." });
   } catch (error) {
     console.error("[checkGuestPaymentStatus] Error:", error.message);
+    return res.status(500).json({ success: false, message: "Error checking payment status" });
+  }
+}
+
+// ==============================
+// Guest Buy — Public Album or Single Photo (no auth, no share token)
+// ==============================
+export async function guestBuyPublicAlbum(req, res) {
+  try {
+    const { albumId, mediaId, phone } = req.body;
+
+    if (!phone) return res.status(400).json({ success: false, message: "Phone number is required" });
+    if (!albumId && !mediaId) return res.status(400).json({ success: false, message: "albumId or mediaId is required" });
+
+    const normalizedPhone = String(phone).replace(/[^0-9]/g, "").replace(/^0/, "254");
+    if (!/^254\d{9}$/.test(normalizedPhone)) {
+      return res.status(400).json({ success: false, message: "Invalid phone number. Use format 07XXXXXXXX" });
+    }
+
+    let amount = 0;
+    let description = "Photo Purchase";
+    let mediaItems = [];
+
+    if (albumId) {
+      const album = await Album.findById(albumId);
+      if (!album) return res.status(404).json({ success: false, message: "Album not found" });
+      if (album.isPrivate) return res.status(403).json({ success: false, message: "This album requires a private share link to purchase" });
+
+      if (album.price > 0) {
+        amount = album.price;
+        description = `Album: ${album.name}`.substring(0, 25);
+        const items = await Media.find({ album: albumId }).select("_id title fileUrl price");
+        mediaItems = items;
+      } else {
+        return res.status(400).json({ success: false, message: "This album has no price set. Browse individual photos to purchase." });
+      }
+    } else {
+      const media = await Media.findById(mediaId).populate("album", "isPrivate");
+      if (!media) return res.status(404).json({ success: false, message: "Photo not found" });
+      if (media.album?.isPrivate) return res.status(403).json({ success: false, message: "This photo requires a private share link to purchase" });
+      if (!media.price || media.price <= 0) return res.status(400).json({ success: false, message: "This photo has no price set" });
+      amount = media.price;
+      description = `Photo: ${media.title || "Untitled"}`.substring(0, 25);
+      mediaItems = [media];
+    }
+
+    const tempId = `gp_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    const payment = await Payment.create({
+      buyer: null,
+      guestPhone: normalizedPhone,
+      media: mediaId || null,
+      cartItems: mediaItems.map(m => m._id),
+      amount,
+      adminShare: Number((amount * 0.10).toFixed(2)),
+      photographerShare: Number((amount * 0.90).toFixed(2)),
+      status: "pending",
+      paymentMethod: "mpesa",
+      checkoutRequestID: tempId,
+      merchantRequestID: tempId,
+      transactionId: tempId,
+      phoneNumber: normalizedPhone,
+      transactionDate: new Date()
+    });
+
+    let accessToken;
+    try { accessToken = await _getMpesaToken(); }
+    catch {
+      payment.status = "failed"; await payment.save();
+      return res.status(500).json({ success: false, message: "M-Pesa service unavailable. Please try again." });
+    }
+
+    const timestamp = new Date().toISOString().replace(/[-T:.Z]/g, "").slice(0, 14);
+    const password = Buffer.from(_mpesaShortCode + _mpesaPasskey + timestamp).toString("base64");
+    const callbackUrl = process.env.MPESA_CALLBACK_URL || `${_backendUrl}/api/payments/callback`;
+
+    const stkResponse = await axios.post(
+      _mpesaEnv === "sandbox"
+        ? "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest"
+        : "https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest",
+      {
+        BusinessShortCode: _mpesaShortCode,
+        Password: password,
+        Timestamp: timestamp,
+        TransactionType: "CustomerPayBillOnline",
+        Amount: Math.round(amount),
+        PartyA: normalizedPhone,
+        PartyB: _mpesaShortCode,
+        PhoneNumber: normalizedPhone,
+        CallBackURL: callbackUrl,
+        AccountReference: "RELIC_SNAP",
+        TransactionDesc: description
+      },
+      { headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" }, timeout: 30000 }
+    );
+
+    payment.checkoutRequestID = stkResponse.data.CheckoutRequestID;
+    payment.merchantRequestID = stkResponse.data.MerchantRequestID;
+    await payment.save();
+
+    return res.status(201).json({
+      success: true,
+      message: "M-Pesa payment prompt sent. Check your phone.",
+      checkoutRequestID: stkResponse.data.CheckoutRequestID,
+      amount
+    });
+  } catch (error) {
+    console.error("[guestBuyPublicAlbum] Error:", error.response?.data || error.message);
+    return res.status(500).json({ success: false, message: "Payment initiation failed. Please try again." });
+  }
+}
+
+// ==============================
+// Check Direct Guest Payment Status (no share token needed)
+// ==============================
+export async function checkDirectGuestStatus(req, res) {
+  try {
+    const { requestId } = req.params;
+    const payment = await Payment.findOne({ checkoutRequestID: requestId }).populate("cartItems", "title fileUrl price");
+
+    if (!payment) return res.status(404).json({ success: false, message: "Payment not found" });
+
+    if (payment.status === "completed") {
+      const downloadItems = (payment.cartItems || []).map(m => ({
+        title: m.title || "Photo",
+        fileUrl: normalizeFileUrl(m.fileUrl),
+        price: m.price
+      }));
+      return res.status(200).json({ success: true, status: "completed", downloadItems });
+    }
+
+    if (payment.status === "failed") {
+      return res.status(200).json({ success: true, status: "failed", message: "Payment declined. Please try again." });
+    }
+
+    return res.status(200).json({ success: true, status: "pending" });
+  } catch (error) {
+    console.error("[checkDirectGuestStatus] Error:", error.message);
     return res.status(500).json({ success: false, message: "Error checking payment status" });
   }
 }
