@@ -9,7 +9,7 @@ const DEFAULT_WATERMARK = "Relic Snap";
 // Register
 async function register(req, res) {
   try {
-    const { username, email, password, role, phoneNumber } = req.body;
+    const { username, email, password, role, phoneNumber, accountType, organizationName } = req.body;
 
     // Validate required fields
     if (!username || !email || !password || !phoneNumber) {
@@ -59,6 +59,9 @@ async function register(req, res) {
       password: hashedPassword,
       profilePicture,
       phoneNumber: phoneNumber || "",
+      payoutPhoneNumber: phoneNumber || "", // Default payout = registration phone
+      accountType: accountType || "individual",
+      organizationName: organizationName || "",
       role: role || "user",
       watermark: req.body.watermark || DEFAULT_WATERMARK,
       ...(referredByUserId ? { referredBy: referredByUserId } : {}),
@@ -337,6 +340,7 @@ async function updatePhotographerPhone(req, res) {
     }
 
     user.phoneNumber = phoneNumber;
+    user.payoutPhoneNumber = phoneNumber; // Keep payout in sync
     await user.save();
 
     const { password: pw, ...safeData } = user._doc;

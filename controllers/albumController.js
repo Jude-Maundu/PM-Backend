@@ -688,3 +688,78 @@ export async function getEventMediaByToken(req, res) {
     res.status(500).json({ message: "Internal server error" });
   }
 }
+// ==============================
+// PUBLIC ALBUM BROWSING
+// ==============================
+
+export async function getPublicAlbums(req, res) {
+  try {
+    const { albumType, eventType, search, page = 1, limit = 20 } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
+
+    const query = { isPrivate: false, isApproved: true };
+    if (albumType) query.albumType = albumType;
+    if (eventType) query.eventType = eventType;
+    if (search) query.name = { $regex: search, $options: 'i' };
+
+    const [albums, total] = await Promise.all([
+      Album.find(query)
+        .populate('photographer', 'username profilePicture')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Number(limit))
+        .select('name description coverImage price albumType eventType mediaCount views purchasedBy photographer createdAt tags location'),
+      Album.countDocuments(query),
+    ]);
+
+    res.status(200).json({ success: true, albums, total, page: Number(page), pages: Math.ceil(total / Number(limit)) });
+  } catch (error) {
+    console.error("Error fetching public albums:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+export async function getPublicAlbumById(req, res) {
+  try {
+    const { albumId } = req.params;
+
+    const album = await Album.findOne({ _id: albumId, isPrivate: false, isApproved: true })
+      .populate('photographer', 'username profilePicture bio location')
+      .populate('media', 'title price fileUrl watermarkedUrl mediaType downloads views likes isApproved description');
+
+    if (!album) return res.status(404).json({ message: "Album not found or is private" });
+
+    album.views = (album.views || 0) + 1;
+    await album.save();
+
+    res.status(200).json({ success: true, album });
+  } catch (error) {
+    console.error("Error fetching public album:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+}
+
+// Update payout phone — separate dedicated endpoint
+export async function updatePayoutPhone(req, res) {
+  try {
+    const { id } = req.params;
+    const { payoutPhoneNumber } = req.body;
+    const requesterId = getRequestUserId(req);
+
+    if (requesterId !== id && req.user?.role !== 'admin') {
+      return res.status(403).json({ message: "Unauthorized" });
+    }
+
+    const phoneRegex = /^254\d{9}$/;
+    if (!phoneRegex.test(payoutPhoneNumber)) {
+      return res.status(400).json({ message: "Invalid phone format. Use 254XXXXXXXXX" });
+    }
+
+    const user = await User.findByIdAndUpdate(id, { payoutPhoneNumber }, { new: true }).select('-password');
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    res.status(200).json({ success: true, message: "Payout phone updated", payoutPhoneNumber: user.payoutPhoneNumber });
+  } catch (error) {
+    res.status(500).json({ message: "Internal server error" });
+  }
+}

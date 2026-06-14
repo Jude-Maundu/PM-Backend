@@ -31,7 +31,7 @@ import {
   approveMedia,
   rejectMedia
 } from "../controllers/MediaController.js";
-import { addMediaToAlbum, removeMediaFromAlbum, getAlbumMedia } from "../controllers/albumController.js";
+import { addMediaToAlbum, removeMediaFromAlbum, getAlbumMedia, getPublicAlbums, getPublicAlbumById, updatePayoutPhone } from "../controllers/albumController.js";
 
 import { uploadPhoto } from "../middlewares/upload.js";
 import { authenticate } from "../middlewares/auth.js";
@@ -59,32 +59,8 @@ router.post("/album", authenticate, uploadLimiter, uploadPhoto.single("coverImag
 router.post("/album/bulk-upload", authenticate, uploadLimiter, uploadPhoto.array("files", 20), bulkUploadAlbumMedia);
 router.post("/bulk-upload", authenticate, uploadLimiter, uploadPhoto.array("files", 20), bulkUploadAlbumMedia);
 router.get("/albums", authenticate, getAlbums);
-router.get("/albums/public", async (req, res) => {
-  try {
-    const albums = await (await import("../models/album.js")).default
-      .find({ isPrivate: { $ne: true } })
-      .populate("photographer", "username email profilePicture")
-      .sort({ createdAt: -1 });
-    res.json({ success: true, albums });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
-router.get("/album/:albumId/public", async (req, res) => {
-  try {
-    const Album = (await import("../models/album.js")).default;
-    const Media = (await import("../models/media.js")).default;
-    const album = await Album.findById(req.params.albumId)
-      .populate("photographer", "username profilePicture watermark");
-    if (!album || album.isPrivate) return res.status(404).json({ message: "Gallery not found" });
-    const media = await Media.find({ album: album._id, isPrivate: false, isApproved: true })
-      .select("title price fileUrl watermarkedUrl mediaType _id")
-      .sort({ createdAt: -1 });
-    res.json({ success: true, album, media });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
+router.get("/albums/public", getPublicAlbums);
+router.get("/album/:albumId/public", getPublicAlbumById);
 router.get("/album/:albumId", authenticate, getAlbum);
 router.put("/album/:albumId", authenticate, uploadPhoto.single("coverImage"), updateAlbum);
 router.delete("/album/:albumId", authenticate, deleteAlbum);
