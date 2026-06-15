@@ -304,16 +304,25 @@ export async function getAlbums(req, res) {
   try {
     const userId = getRequestUserId(req);
     const query = userId ? { photographer: userId } : {};
-    
+
     const albums = await Album.find(query)
       .populate('photographer', 'username email')
       .sort({ createdAt: -1 });
+
+    // Count from Media collection as the authoritative source (album.media array can be out of sync)
+    const albumIds = albums.map(a => a._id);
+    const mediaCounts = await Media.aggregate([
+      { $match: { album: { $in: albumIds } } },
+      { $group: { _id: '$album', count: { $sum: 1 } } }
+    ]);
+    const countMap = {};
+    mediaCounts.forEach(c => { countMap[c._id.toString()] = c.count; });
 
     res.status(200).json({
       success: true,
       albums: albums.map(a => ({
         ...a.toObject(),
-        mediaCount: a.media?.length ?? a.mediaCount ?? 0
+        mediaCount: countMap[a._id.toString()] ?? a.media?.length ?? a.mediaCount ?? 0
       }))
     });
   } catch (error) {
@@ -325,15 +334,22 @@ export async function getAlbums(req, res) {
 export async function getAlbum(req, res) {
   try {
     const { albumId } = req.params;
-    const userId = getRequestUserId(req);
 
-    const album = await Album.findOne({ _id: albumId })
+    const album = await Album.findById(albumId)
       .populate('photographer', 'username email')
-      .populate('media', 'title price fileUrl mediaType likes views downloads');
+      .populate('media', 'title price fileUrl watermarkedUrl imageUrl mediaType likes views downloads');
 
     if (!album) {
       return res.status(404).json({ message: "Album not found" });
     }
+
+    // Also find media that references this album directly (handles sync issues)
+    const linkedMedia = await Media.find({
+      album: albumId,
+      _id: { $nin: album.media.map(m => m._id) }
+    }).select('title price fileUrl watermarkedUrl imageUrl mediaType likes views downloads');
+
+    const allMedia = [...album.media, ...linkedMedia];
 
     // Increment view count
     album.views += 1;
@@ -341,7 +357,11 @@ export async function getAlbum(req, res) {
 
     res.status(200).json({
       success: true,
-      album
+      album: {
+        ...album.toObject(),
+        media: allMedia,
+        mediaCount: allMedia.length
+      }
     });
   } catch (error) {
     console.error("Error fetching album:", error);
@@ -543,26 +563,24 @@ export async function bulkUploadAlbumMedia(req, res) {
       return res.status(400).json({ message: "No files uploaded" });
     }
 
-    // Verify album ownership if albumId provided
+    // Find album — search by id only, not photographer, so the link is always made
     let album = null;
     if (albumId) {
-      album = await Album.findOne({ _id: albumId, photographer: userId });
+      album = await Album.findById(albumId);
       if (!album) {
-        return res.status(404).json({ message: "Album not found or not owned by you" });
+        return res.status(404).json({ message: "Album not found" });
       }
     }
 
     const uploadedMedia = [];
-    for (const file of req.files) {
-      const filePrice = Number(req.body.price ?? 0);
-      if (Number.isNaN(filePrice) || filePrice < 0) {
-        return res.status(400).json({ message: "Uploaded media price must be a valid non-negative number" });
-      }
+    for (let i = 0; i < req.files.length; i++) {
+      const file = req.files[i];
+      const filePrice = Number(req.body[`price_${i}`] ?? req.body.price ?? 0);
 
       const media = await Media.create({
-        title: file.originalname,
-        description: req.body.description || `Uploaded on ${new Date().toLocaleDateString()}`,
-        price: filePrice,
+        title: req.body[`title_${i}`] || file.originalname,
+        description: req.body.description || '',
+        price: isNaN(filePrice) || filePrice < 0 ? 0 : filePrice,
         fileUrl: file.path,
         mediaType: file.mimetype.startsWith('video') ? 'video' : 'photo',
         photographer: photographer || userId,
@@ -570,14 +588,13 @@ export async function bulkUploadAlbumMedia(req, res) {
       });
       uploadedMedia.push(media);
 
-      // Add to album if album exists
       if (album) {
         album.media.push(media._id);
       }
     }
 
     if (album) {
-      album.mediaCount = (album.mediaCount || 0) + uploadedMedia.length;
+      album.mediaCount = album.media.length;
       await album.save();
     }
 
