@@ -19,10 +19,13 @@ const walletSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
-  // Track transactions
+  // Embedded transaction history
   transactions: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "WalletTransaction"
+    type:        { type: String, enum: ["credit", "debit", "refund", "topup"], required: true },
+    amount:      { type: Number, required: true },
+    description: { type: String },
+    reference:   { type: String },
+    createdAt:   { type: Date, default: Date.now },
   }]
 }, { timestamps: true });
 

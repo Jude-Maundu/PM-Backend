@@ -133,7 +133,7 @@ router.post("/wallets/:userId/adjust", requireAdmin, async (req, res) => {
       type: amount > 0 ? "credit" : "debit",
       amount: Math.abs(amount),
       description: reason || "Admin adjustment",
-      date: new Date(),
+      createdAt: new Date(),
     });
     await wallet.save();
     res.json({ success: true, message: "Wallet adjusted", balance: wallet.balance });
