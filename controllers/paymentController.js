@@ -876,43 +876,63 @@ async function getPurchaseHistory(req, res) {
     const { userId } = req.params;
 
     const payments = await Payment.find({ buyer: userId, status: "completed" })
-      .populate("media", "title price photographer fileUrl")
-      .populate("media.photographer", "username")
-      .populate("cartItems", "title price photographer fileUrl")
-      .populate("cartItems.photographer", "username")
+      .populate("media", "title price photographer fileUrl watermarkedUrl")
+      .populate("cartItems", "title price photographer fileUrl watermarkedUrl")
+      .populate({
+        path: "album",
+        select: "name coverImage price photographer description",
+        populate: { path: "photographer", select: "username" },
+      })
       .sort({ createdAt: -1 });
 
     const purchaseHistory = [];
 
     for (const payment of payments) {
-      if (payment.media) {
+      const txId = payment.mpesaReceiptNumber || payment.transactionId || payment.checkoutRequestID || payment.merchantRequestID;
+      const base = {
+        paymentId: payment._id,
+        amount: payment.amount,
+        date: payment.createdAt,
+        createdAt: payment.createdAt,
+        receiptId: payment.receiptId || payment._id,
+        status: payment.status,
+        paymentMethod: payment.paymentMethod,
+        transactionId: txId,
+      };
+
+      if (payment.album) {
+        const album = payment.album;
         purchaseHistory.push({
-          paymentId: payment._id,
-          amount: payment.amount,
+          ...base,
+          mediaId: album._id,
+          isAlbum: true,
+          title: album.name,
+          photographerName: album.photographer?.username,
+          mediaDetails: {
+            _id: album._id,
+            title: album.name,
+            fileUrl: album.coverImage,
+            watermarkedUrl: album.coverImage,
+            price: album.price,
+          },
+        });
+      } else if (payment.media) {
+        purchaseHistory.push({
+          ...base,
           mediaId: payment.media._id,
-          mediaDetails: payment.media,
           title: payment.media.title,
           photographerName: payment.media.photographer?.username,
-          date: payment.createdAt,
-          receiptId: payment.receiptId || payment._id,
-          status: payment.status,
-          paymentMethod: payment.paymentMethod,
-          transactionId: payment.mpesaReceiptNumber || payment.transactionId || payment.checkoutRequestID || payment.merchantRequestID,
+          mediaDetails: payment.media,
         });
       } else if (payment.cartItems && payment.cartItems.length > 0) {
         for (const cartItem of payment.cartItems) {
           purchaseHistory.push({
-            paymentId: payment._id,
+            ...base,
             amount: payment.amount / payment.cartItems.length,
             mediaId: cartItem._id || cartItem,
             mediaDetails: cartItem,
             title: cartItem.title,
             photographerName: cartItem.photographer?.username,
-            date: payment.createdAt,
-            receiptId: payment.receiptId || payment._id,
-            status: payment.status,
-            paymentMethod: payment.paymentMethod,
-            transactionId: payment.mpesaReceiptNumber || payment.transactionId || payment.checkoutRequestID || payment.merchantRequestID,
           });
         }
       }
