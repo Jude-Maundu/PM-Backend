@@ -723,7 +723,7 @@ export async function getPublicAlbums(req, res) {
     const { albumType, eventType, search, page = 1, limit = 20 } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
 
-    const query = { isPrivate: false, isApproved: true };
+    const query = { isPrivate: false };
     if (albumType) query.albumType = albumType;
     if (eventType) query.eventType = eventType;
     if (search) query.name = { $regex: search, $options: 'i' };
@@ -749,16 +749,27 @@ export async function getPublicAlbumById(req, res) {
   try {
     const { albumId } = req.params;
 
-    const album = await Album.findOne({ _id: albumId, isPrivate: false, isApproved: true })
+    const album = await Album.findOne({ _id: albumId, isPrivate: false })
       .populate('photographer', 'username profilePicture bio location')
-      .populate('media', 'title price fileUrl watermarkedUrl mediaType downloads views likes isApproved description');
+      .populate('media', 'title price fileUrl watermarkedUrl imageUrl mediaType downloads views likes isApproved description');
 
     if (!album) return res.status(404).json({ message: "Album not found or is private" });
+
+    // Merge orphaned media (same dual-reference fix as getAlbum)
+    const linkedMedia = await Media.find({
+      album: albumId,
+      _id: { $nin: album.media.map(m => m._id) }
+    }).select('title price fileUrl watermarkedUrl imageUrl mediaType downloads views likes isApproved description');
+
+    const allMedia = [...album.media, ...linkedMedia];
 
     album.views = (album.views || 0) + 1;
     await album.save();
 
-    res.status(200).json({ success: true, album });
+    res.status(200).json({
+      success: true,
+      album: { ...album.toObject(), media: allMedia, mediaCount: allMedia.length }
+    });
   } catch (error) {
     console.error("Error fetching public album:", error);
     res.status(500).json({ message: "Internal server error" });

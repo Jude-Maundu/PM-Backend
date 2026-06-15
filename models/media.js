@@ -35,7 +35,7 @@ const mediaSchema = new mongoose.Schema({
     enum: ["personal", "commercial", "editorial"]
   },
   viewCount: { type: Number, default: 0 },
-  isApproved: { type: Boolean, default: false },
+  isApproved: { type: Boolean, default: true },
   isFlagged: { type: Boolean, default: false },
   flagReason: { type: String, default: "" },
   rejectionReason: { type: String, default: "" },
