@@ -311,7 +311,10 @@ export async function getAlbums(req, res) {
 
     res.status(200).json({
       success: true,
-      albums
+      albums: albums.map(a => ({
+        ...a.toObject(),
+        mediaCount: a.media?.length ?? a.mediaCount ?? 0
+      }))
     });
   } catch (error) {
     console.error("Error fetching albums:", error);
