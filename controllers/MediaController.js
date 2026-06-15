@@ -627,7 +627,7 @@ export async function createMedia(req, res) {
 // ==============================
 export async function bulkUploadAlbumMedia(req, res) {
   try {
-    const { album } = req.body;
+    const album = req.body.album || req.body.albumId;
     
     // Extract authenticated user ID
     const authUserId = extractAuthUserId(req);
