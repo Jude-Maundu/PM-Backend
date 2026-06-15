@@ -14,6 +14,7 @@ import {
 import { authenticate } from "../middlewares/auth.js";
 import { requireAdmin } from "../middlewares/admin.js";
 import Album from "../models/album.js";
+import Media from "../models/media.js";
 import Wallet from "../models/Wallet.js";
 import User from "../models/users.js";
 import {
@@ -177,12 +178,26 @@ router.post("/album/:albumId/buy", authenticate, async (req, res) => {
     album.purchasedBy.push(buyerId);
     await album.save();
 
+    // Fetch full media list to return download info
+    const populatedAlbum = await Album.findById(albumId).populate(
+      "media",
+      "title fileUrl watermarkedUrl imageUrl mediaType"
+    );
+
+    const downloadInfo = (populatedAlbum?.media || []).map((m, i) => ({
+      mediaId: m._id,
+      title: m.title || `photo_${i + 1}`,
+      fileUrl: m.fileUrl || m.watermarkedUrl || m.imageUrl,
+    }));
+
     res.json({
       success: true,
       message: `Album "${album.name}" purchased successfully`,
       albumId,
+      albumName: album.name,
       amountPaid: album.price,
       newBalance: buyerWallet.balance,
+      downloadInfo,
     });
   } catch (err) {
     console.error("Album purchase error:", err);
@@ -200,6 +215,51 @@ router.get("/album/:albumId/purchased", authenticate, async (req, res) => {
     const purchased = album.purchasedBy.map(id => id.toString()).includes(buyerId.toString());
     res.json({ purchased, price: album.price });
   } catch (err) {
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// Get download info for a purchased album
+router.get("/album/:albumId/download-info", authenticate, async (req, res) => {
+  try {
+    const { albumId } = req.params;
+    const buyerId = (req.user?.userId || req.user?.id || req.user?._id)?.toString();
+
+    const album = await Album.findById(albumId)
+      .select("name price purchasedBy media photographer")
+      .populate("media", "title fileUrl watermarkedUrl imageUrl mediaType");
+
+    if (!album) return res.status(404).json({ message: "Album not found" });
+
+    const isOwner = album.photographer?.toString() === buyerId;
+    const hasPurchased = album.purchasedBy.map(id => id.toString()).includes(buyerId);
+    const isFree = !album.price || album.price <= 0;
+
+    if (!isOwner && !hasPurchased && !isFree) {
+      return res.status(403).json({ message: "You have not purchased this album" });
+    }
+
+    // For free albums or purchased albums, find all linked media
+    let mediaList = album.media || [];
+    if (mediaList.length === 0) {
+      mediaList = await Media.find({ album: albumId })
+        .select("title fileUrl watermarkedUrl imageUrl mediaType");
+    }
+
+    const downloadInfo = mediaList.map((m, i) => ({
+      mediaId: m._id,
+      title: m.title || `photo_${i + 1}`,
+      fileUrl: m.fileUrl || m.watermarkedUrl || m.imageUrl,
+    })).filter(d => d.fileUrl);
+
+    res.json({
+      success: true,
+      albumName: album.name,
+      photoCount: downloadInfo.length,
+      downloadInfo,
+    });
+  } catch (err) {
+    console.error("Download info error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 });
