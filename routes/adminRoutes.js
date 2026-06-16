@@ -22,6 +22,8 @@ import SystemConfig from "../models/SystemConfig.js";
 import PhotographerApplication from "../models/PhotographerApplication.js";
 
 const router = express.Router();
+const STAFF_ROLES = ["reviewer", "support", "secretary", "engineer", "marketing"];
+const MANAGEABLE_ROLES = ["admin", "photographer", "user", "institution", ...STAFF_ROLES];
 
 // All admin routes require authentication + at minimum staff role.
 // Destructive/write endpoints individually require requireAdmin below.
@@ -56,7 +58,7 @@ router.patch("/users/:id/ban", requireAdmin, async (req, res) => {
 router.patch("/users/:id/role", requireAdmin, async (req, res) => {
   try {
     const { role } = req.body;
-    const allowed = ["admin", "photographer", "user", "institution"];
+    const allowed = MANAGEABLE_ROLES;
     if (!allowed.includes(role)) return res.status(400).json({ message: "Invalid role" });
     const user = await User.findByIdAndUpdate(req.params.id, { role }, { new: true }).select("-password");
     if (!user) return res.status(404).json({ message: "User not found" });
@@ -482,7 +484,7 @@ router.get("/logs", async (req, res) => {
 
 router.get("/staff", async (req, res) => {
   try {
-    const staff = await User.find({ role: { $in: ['reviewer', 'support'] } })
+    const staff = await User.find({ role: { $in: STAFF_ROLES } })
       .select('username email role staffPermissions createdAt isActive isBanned')
       .sort({ createdAt: -1 });
     res.json({ success: true, data: staff });
@@ -492,8 +494,8 @@ router.get("/staff", async (req, res) => {
 router.post("/staff", requireAdmin, logAdminAction('create_staff', 'User'), async (req, res) => {
   try {
     const { username, email, password, role, permissions = {} } = req.body;
-    if (!['reviewer', 'support'].includes(role))
-      return res.status(400).json({ message: 'Role must be reviewer or support' });
+    if (!STAFF_ROLES.includes(role))
+      return res.status(400).json({ message: `Role must be one of: ${STAFF_ROLES.join(", ")}` });
     if (!password || password.length < 8)
       return res.status(400).json({ message: 'Password must be at least 8 characters' });
 
@@ -516,7 +518,7 @@ router.patch("/staff/:id/permissions", requireAdmin, logAdminAction('update_staf
     const { permissions, role } = req.body;
     const update = {};
     if (permissions) update.staffPermissions = permissions;
-    if (role && ['reviewer', 'support'].includes(role)) update.role = role;
+    if (role && STAFF_ROLES.includes(role)) update.role = role;
 
     const staff = await User.findByIdAndUpdate(req.params.id, update, { new: true })
       .select('username email role staffPermissions');
@@ -530,7 +532,7 @@ router.delete("/staff/:id", requireAdmin, logAdminAction('remove_staff', 'User')
   try {
     const staff = await User.findById(req.params.id);
     if (!staff) return res.status(404).json({ message: 'Staff not found' });
-    if (!['reviewer', 'support'].includes(staff.role))
+    if (!STAFF_ROLES.includes(staff.role))
       return res.status(400).json({ message: 'User is not a staff member' });
 
     staff.role    = 'user';
