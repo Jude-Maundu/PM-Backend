@@ -3,6 +3,7 @@ import { authenticate } from '../middlewares/auth.js';
 import { requirePhotographer } from '../middlewares/photographer.js';
 import { requireAdmin } from '../middlewares/admin.js';
 import {
+  requestWithdrawalMfa,
   requestWithdrawal,
   getPhotographerWithdrawals,
   getAllWithdrawals,
@@ -18,6 +19,7 @@ router.post('/b2c-callback', b2cWithdrawalCallback);
 router.post('/b2c-timeout', b2cWithdrawalTimeout);
 
 // Photographer routes
+router.post('/request-mfa', authenticate, requirePhotographer, requestWithdrawalMfa);
 router.post('/request', authenticate, requirePhotographer, requestWithdrawal);
 router.get('/my', authenticate, requirePhotographer, getPhotographerWithdrawals);
 

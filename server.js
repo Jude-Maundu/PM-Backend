@@ -139,6 +139,7 @@ app.use("/uploads", (req, res, next) => {
     res.setHeader('Vary', 'Origin');
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
   next();
 }, express.static(path.join(__dirname, "uploads")));
 

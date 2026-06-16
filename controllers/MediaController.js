@@ -662,7 +662,7 @@ export async function bulkUploadAlbumMedia(req, res) {
     const photographer = await User.findById(authUserId).select("watermark username").lean();
     const watermarkText = photographer?.watermark || photographer?.username || "";
 
-    const uploadedMedia = await Promise.all(req.files.map(async (file) => {
+    const mediaPayload = req.files.map((file) => {
       let fileUrl = file.secure_url || file.url || file.path || file.filename;
       if (fileUrl && !fileUrl.startsWith("http") && !fileUrl.startsWith("/")) {
         fileUrl = `/uploads/photos/${fileUrl}`;
@@ -670,7 +670,7 @@ export async function bulkUploadAlbumMedia(req, res) {
 
       const watermarkedUrl = buildWatermarkedUrl(fileUrl, watermarkText);
 
-      const media = await Media.create({
+      return {
         title: file.originalname || file.filename || "Untitled",
         description: req.body.description || `Uploaded on ${new Date().toLocaleDateString()}`,
         price: uploadPrice,
@@ -680,17 +680,17 @@ export async function bulkUploadAlbumMedia(req, res) {
         album: album || null,
         photographer: authUserId,
         isPrivate: inheritedPrivate || parsedPrivate,
-      });
-
-      if (album) {
-        await Album.findByIdAndUpdate(album, {
-          $push: { media: media._id },
-          $inc: { mediaCount: 1 }
-        });
       }
+    });
 
-      return media;
-    }));
+    const uploadedMedia = await Media.insertMany(mediaPayload);
+
+    if (album && uploadedMedia.length > 0) {
+      await Album.findByIdAndUpdate(album, {
+        $push: { media: { $each: uploadedMedia.map((item) => item._id) } },
+        $inc: { mediaCount: uploadedMedia.length }
+      });
+    }
 
     res.status(201).json({ success: true, media: uploadedMedia });
   } catch (error) {

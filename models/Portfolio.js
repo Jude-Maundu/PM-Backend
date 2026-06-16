@@ -5,6 +5,11 @@ const portfolioSchema = new mongoose.Schema({
   username: { type: String, required: true },
   template: { type: String, enum: ['noir', 'studio', 'bold', 'lens'], default: 'noir' },
   isPublished: { type: Boolean, default: false },
+  brand: {
+    siteTitle: { type: String, default: '' },
+    tagline: { type: String, default: '' },
+    specialty: { type: String, default: '' },
+  },
   hero: {
     headline: { type: String, default: '' },
     subheadline: { type: String, default: '' },
@@ -14,9 +19,28 @@ const portfolioSchema = new mongoose.Schema({
   about: {
     bio: { type: String, default: '' },
     image: { type: String, default: '' },
+    experience: { type: String, default: '' },
+    approach: { type: String, default: '' },
   },
   featuredMediaIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Media' }],
   featuredAlbumIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Album' }],
+  stats: [{
+    label: { type: String, default: '' },
+    value: { type: String, default: '' },
+  }],
+  services: [{
+    title: { type: String, default: '' },
+    description: { type: String, default: '' },
+  }],
+  testimonials: [{
+    name: { type: String, default: '' },
+    role: { type: String, default: '' },
+    quote: { type: String, default: '' },
+  }],
+  process: [{
+    title: { type: String, default: '' },
+    description: { type: String, default: '' },
+  }],
   contact: {
     email: { type: String, default: '' },
     phone: { type: String, default: '' },
@@ -38,7 +62,6 @@ const portfolioSchema = new mongoose.Schema({
   },
 }, { timestamps: true });
 
-portfolioSchema.index({ photographer: 1 });
 portfolioSchema.index({ username: 1 });
 
 export default mongoose.model('Portfolio', portfolioSchema);

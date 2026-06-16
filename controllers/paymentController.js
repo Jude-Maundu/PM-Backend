@@ -460,9 +460,19 @@ async function mpesaCallback(req, res) {
     
     if (payment.media) {
       console.log(`📦 Processing single media purchase`);
-      const media = await Media.findById(payment.media).populate("photographer");
-      if (media) {
-        purchasedMedia.push(media);
+      const mediaRef = payment.media;
+      const mediaId =
+        mediaRef?._id?.toString?.() ||
+        mediaRef?.toString?.() ||
+        null;
+
+      if (mediaRef?.title && mediaRef?.photographer) {
+        purchasedMedia.push(mediaRef);
+      } else if (mediaId && mongoose.Types.ObjectId.isValid(mediaId)) {
+        const media = await Media.findById(mediaId).populate("photographer");
+        if (media) {
+          purchasedMedia.push(media);
+        }
       }
     }
     
@@ -482,8 +492,13 @@ async function mpesaCallback(req, res) {
     if (purchasedMedia.length > 0) {
       console.log(`📥 Updating downloads for ${purchasedMedia.length} items`);
 
-      const mediaIdsToUpdate = purchasedMedia.map((m) => m._id);
-      await Media.updateMany({ _id: { $in: mediaIdsToUpdate } }, { $inc: { downloads: 1 } });
+      const mediaIdsToUpdate = purchasedMedia
+        .map((m) => m?._id?.toString?.() || m?._id || null)
+        .filter((id) => id && mongoose.Types.ObjectId.isValid(id));
+
+      if (mediaIdsToUpdate.length > 0) {
+        await Media.updateMany({ _id: { $in: mediaIdsToUpdate } }, { $inc: { downloads: 1 } });
+      }
 
       const itemsData = purchasedMedia.map((m) => ({
         media: m._id,
@@ -579,7 +594,9 @@ async function mpesaCallback(req, res) {
           priority: "high"
         });
 
-        const photographer = await User.findById(photographerId);
+        const photographer = mongoose.Types.ObjectId.isValid(photographerId)
+          ? await User.findById(photographerId)
+          : null;
         if (photographer?.phoneNumber && amount > 0) {
           console.log(`💰 Sending B2C payout to photographer ${photographer.username}: KES ${amount.toFixed(2)}`);
           await sendMoneyToPhotographer(
@@ -618,7 +635,7 @@ async function mpesaCallback(req, res) {
     }
 
     console.log(`✅ Callback processing complete for payment ${payment._id}`);
-    return res.status(200).json({ ResultCode: 0, ResultDesc: "Payment processed successfully" });
+    return res.status(200).json({ ResultCode: 0, ResultDesc: "Success" });
 
   } catch (error) {
     console.error("❌ Callback error:", error);
@@ -629,7 +646,8 @@ async function mpesaCallback(req, res) {
 async function buyMedia(req, res) {
   try {
     const { mediaId, useWallet = true } = req.body;
-    const buyerId = req.body.buyerId || req.body.userId;
+    const buyerId = req.body.buyerId || req.body.userId
+      || req.user?.userId || req.user?.id || req.user?._id;
 
     if (!mediaId || !buyerId) {
       return res.status(400).json({ message: "mediaId and buyerId (or userId) are required" });
@@ -653,7 +671,7 @@ async function buyMedia(req, res) {
     if (useWallet) {
       let wallet = await Wallet.findOne({ user: buyerId });
       if (!wallet || wallet.balance < price) {
-        return res.status(400).json({ message: "Insufficient wallet balance" });
+        return res.status(402).json({ message: `Insufficient wallet balance. You need KES ${price} but have KES ${wallet?.balance || 0}` });
       }
       wallet.balance -= price;
       await wallet.save();

@@ -763,8 +763,7 @@ export async function getPublicAlbumById(req, res) {
 
     const allMedia = [...album.media, ...linkedMedia];
 
-    album.views = (album.views || 0) + 1;
-    await album.save();
+    Album.findByIdAndUpdate(albumId, { $inc: { views: 1 } }).catch(() => {});
 
     res.status(200).json({
       success: true,

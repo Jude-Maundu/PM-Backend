@@ -3,6 +3,42 @@ import User from '../models/users.js';
 import Wallet from '../models/Wallet.js';
 import { sendMoneyToPhotographer } from './paymentController.js';
 import { emitToUser } from '../services/socketService.js';
+import bcrypt from 'bcrypt';
+import emailService from '../services/emailService.js';
+
+export async function requestWithdrawalMfa(req, res) {
+  try {
+    const photographerId = req.user?.userId || req.user?.id || req.user?._id;
+    if (!photographerId) return res.status(401).json({ message: 'Authentication required' });
+
+    const photographer = await User.findById(photographerId).select('email username mfaOtp mfaOtpExpires');
+    if (!photographer) return res.status(404).json({ message: 'Photographer not found' });
+    if (!photographer.email) {
+      return res.status(400).json({ message: 'Please add an email address before requesting a withdrawal verification code' });
+    }
+
+    const otp = String(Math.floor(100000 + Math.random() * 900000));
+    photographer.mfaOtp = await bcrypt.hash(otp, 8);
+    photographer.mfaOtpExpires = new Date(Date.now() + 10 * 60 * 1000);
+    await photographer.save();
+
+    const sent = await emailService.sendMfaOtp(photographer.email, photographer.username, otp);
+    if (!sent?.success) {
+      return res.status(502).json({ message: 'Failed to send verification code. Please try again.' });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'A withdrawal verification code has been sent to your email. It expires in 10 minutes.',
+    });
+  } catch (error) {
+    console.error('Error requesting withdrawal MFA:', error);
+    return res.status(500).json({
+      message: 'Failed to send withdrawal verification code',
+      error: process.env.NODE_ENV !== 'production' ? error.message : undefined,
+    });
+  }
+}
 
 // ==============================
 // Request withdrawal + immediate B2C payout
@@ -10,7 +46,7 @@ import { emitToUser } from '../services/socketService.js';
 export async function requestWithdrawal(req, res) {
   try {
     const photographerId = req.user?.userId || req.user?.id || req.user?._id;
-    const { amount, method, phoneNumber, accountName, accountNumber } = req.body;
+    const { amount, method, phoneNumber, accountName, accountNumber, otp } = req.body;
 
     if (!photographerId) return res.status(401).json({ message: 'Authentication required' });
 
@@ -20,6 +56,28 @@ export async function requestWithdrawal(req, res) {
 
     const photographer = await User.findById(photographerId);
     if (!photographer) return res.status(404).json({ message: 'Photographer not found' });
+
+    if (!otp) {
+      return res.status(400).json({ message: 'Withdrawal verification code is required' });
+    }
+    if (!photographer.mfaOtp || !photographer.mfaOtpExpires) {
+      return res.status(400).json({ message: 'Request a withdrawal verification code first' });
+    }
+    if (photographer.mfaOtpExpires < new Date()) {
+      photographer.mfaOtp = undefined;
+      photographer.mfaOtpExpires = undefined;
+      await photographer.save();
+      return res.status(400).json({ message: 'Your withdrawal verification code has expired. Request a new one.' });
+    }
+
+    const validOtp = await bcrypt.compare(String(otp), photographer.mfaOtp);
+    if (!validOtp) {
+      return res.status(400).json({ message: 'Incorrect withdrawal verification code' });
+    }
+
+    photographer.mfaOtp = undefined;
+    photographer.mfaOtpExpires = undefined;
+    await photographer.save();
 
     // Verify wallet balance
     const wallet = await Wallet.findOne({ user: photographerId });
@@ -33,8 +91,9 @@ export async function requestWithdrawal(req, res) {
     // Normalise phone number for M-Pesa
     let normalizedPhone = phoneNumber;
     if (method === 'mpesa') {
-      if (!phoneNumber) return res.status(400).json({ message: 'Phone number is required for M-Pesa withdrawal' });
-      normalizedPhone = String(phoneNumber).replace(/[^0-9]/g, '');
+      normalizedPhone = phoneNumber || photographer.payoutPhoneNumber || photographer.phoneNumber;
+      if (!normalizedPhone) return res.status(400).json({ message: 'Phone number is required for M-Pesa withdrawal' });
+      normalizedPhone = String(normalizedPhone).replace(/[^0-9]/g, '');
       if (normalizedPhone.startsWith('0') && normalizedPhone.length === 10) normalizedPhone = '254' + normalizedPhone.slice(1);
       if (normalizedPhone.startsWith('7') && normalizedPhone.length === 9) normalizedPhone = '254' + normalizedPhone;
       if (!/^254\d{9}$/.test(normalizedPhone)) {
