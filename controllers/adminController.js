@@ -271,7 +271,7 @@ export async function getAlbumDetailsAdmin(req, res) {
 export async function deleteMediaAdmin(req, res) {
   try {
     const { mediaId } = req.params;
-    const { reason } = req.body;
+    const { reason } = req.body || {};
 
     const media = await Media.findByIdAndDelete(mediaId);
     if (!media) {
@@ -294,7 +294,7 @@ export async function deleteMediaAdmin(req, res) {
 export async function deleteAlbumAdmin(req, res) {
   try {
     const { albumId } = req.params;
-    const { reason } = req.body;
+    const { reason } = req.body || {};
 
     const album = await Album.findByIdAndDelete(albumId);
     if (!album) {
