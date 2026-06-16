@@ -11,10 +11,13 @@ export async function requestWithdrawalMfa(req, res) {
     const photographerId = req.user?.userId || req.user?.id || req.user?._id;
     if (!photographerId) return res.status(401).json({ message: 'Authentication required' });
 
-    const photographer = await User.findById(photographerId).select('email username mfaOtp mfaOtpExpires');
+    const photographer = await User.findById(photographerId).select('email username isVerified mfaOtp mfaOtpExpires');
     if (!photographer) return res.status(404).json({ message: 'Photographer not found' });
     if (!photographer.email) {
       return res.status(400).json({ message: 'Please add an email address before requesting a withdrawal verification code' });
+    }
+    if (!photographer.isVerified) {
+      return res.status(403).json({ message: 'Please verify your email address before requesting a withdrawal verification code' });
     }
 
     const otp = String(Math.floor(100000 + Math.random() * 900000));
@@ -56,6 +59,12 @@ export async function requestWithdrawal(req, res) {
 
     const photographer = await User.findById(photographerId);
     if (!photographer) return res.status(404).json({ message: 'Photographer not found' });
+    if (!photographer.email) {
+      return res.status(400).json({ message: 'Please add an email address before requesting a withdrawal' });
+    }
+    if (!photographer.isVerified) {
+      return res.status(403).json({ message: 'Please verify your email address before requesting a withdrawal' });
+    }
 
     if (!otp) {
       return res.status(400).json({ message: 'Withdrawal verification code is required' });
