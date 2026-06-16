@@ -115,18 +115,26 @@ export async function getAllAlbumsAdmin(req, res) {
     // Get total count
     const total = await Album.countDocuments(filter);
 
-    // Get paginated results
+    // Keep the admin album list lightweight. Populating full media arrays can make
+    // the response too large and cause the dashboard to appear broken on big datasets.
     const albums = await Album.find(filter)
+      .select("name description coverImage price isPrivate mediaCount createdAt photographer")
       .populate("photographer", "username email profilePicture role")
-      .populate("media", "title fileUrl mediaType price")
       .sort(sortObj)
       .skip(skipAmount)
       .limit(parseInt(limit))
       .lean();
 
+    // Ensure mediaCount is always present even if older albums were created before
+    // that field was maintained consistently.
+    const normalizedAlbums = albums.map((album) => ({
+      ...album,
+      mediaCount: Number.isFinite(album.mediaCount) ? album.mediaCount : 0,
+    }));
+
     res.status(200).json({
       success: true,
-      data: albums,
+      data: normalizedAlbums,
       pagination: {
         total,
         page: parseInt(page),
