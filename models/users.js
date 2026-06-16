@@ -18,7 +18,7 @@ const userSchema = new Schema({
   organizationName: { type: String, default: "" },
   role: {
     type: String,
-    enum: ["admin", "reviewer", "support", "photographer", "user", "institution"],
+    enum: ["admin", "reviewer", "support", "secretary", "engineer", "marketing", "photographer", "user", "institution"],
     default: "user"
   },
   // Staff-specific: permissions granted by admin

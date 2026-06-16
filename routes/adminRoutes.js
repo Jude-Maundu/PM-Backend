@@ -13,6 +13,11 @@ import {
   deleteAlbumAdmin,
   getPlatformStatsAdmin
 } from "../controllers/adminController.js";
+import {
+  getSecretaryDashboard,
+  getEngineerDashboard,
+  getMarketingDashboard,
+} from "../controllers/staffDashboardController.js";
 import { getAllWithdrawals, processWithdrawal } from "../controllers/withdrawalController.js";
 import User from "../models/users.js";
 import ShareToken from "../models/ShareToken.js";
@@ -24,6 +29,14 @@ import PhotographerApplication from "../models/PhotographerApplication.js";
 const router = express.Router();
 const STAFF_ROLES = ["reviewer", "support", "secretary", "engineer", "marketing"];
 const MANAGEABLE_ROLES = ["admin", "photographer", "user", "institution", ...STAFF_ROLES];
+
+function requireRoleOrAdmin(...roles) {
+  return (req, res, next) => {
+    const role = req.user?.role;
+    if (role === "admin" || roles.includes(role)) return next();
+    return res.status(403).json({ message: "Forbidden" });
+  };
+}
 
 // All admin routes require authentication + at minimum staff role.
 // Destructive/write endpoints individually require requireAdmin below.
@@ -378,6 +391,12 @@ router.get("/health", async (req, res) => {
   }
 });
 
+// ==================== STAFF DASHBOARDS ====================
+
+router.get("/staff-dashboard/secretary", requireRoleOrAdmin("secretary"), getSecretaryDashboard);
+router.get("/staff-dashboard/engineer", requireRoleOrAdmin("engineer"), getEngineerDashboard);
+router.get("/staff-dashboard/marketing", requireRoleOrAdmin("marketing"), getMarketingDashboard);
+
 // ==================== SYSTEM CONFIG / FEATURE FLAGS ====================
 
 router.get("/config", async (req, res) => {
@@ -387,7 +406,7 @@ router.get("/config", async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-router.patch("/config/:key", requireAdmin, logAdminAction('update_config', 'SystemConfig'), async (req, res) => {
+router.patch("/config/:key", requireRoleOrAdmin("engineer"), logAdminAction('update_config', 'SystemConfig'), async (req, res) => {
   try {
     const { value } = req.body;
     if (value === undefined) return res.status(400).json({ message: 'value is required' });
@@ -398,7 +417,7 @@ router.patch("/config/:key", requireAdmin, logAdminAction('update_config', 'Syst
 });
 
 // Bulk update config
-router.put("/config", requireAdmin, logAdminAction('bulk_update_config', 'SystemConfig'), async (req, res) => {
+router.put("/config", requireRoleOrAdmin("engineer"), logAdminAction('bulk_update_config', 'SystemConfig'), async (req, res) => {
   try {
     const { configs } = req.body; // [{ key, value }]
     if (!Array.isArray(configs)) return res.status(400).json({ message: 'configs array required' });
@@ -425,7 +444,7 @@ router.get("/applications", async (req, res) => {
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-router.patch("/applications/:id/approve", requireAdmin, logAdminAction('approve_application', 'PhotographerApplication'), async (req, res) => {
+router.patch("/applications/:id/approve", requireRoleOrAdmin("secretary", "reviewer", "support"), logAdminAction('approve_application', 'PhotographerApplication'), async (req, res) => {
   try {
     const app = await PhotographerApplication.findById(req.params.id).populate('user');
     if (!app) return res.status(404).json({ message: 'Application not found' });
@@ -444,7 +463,7 @@ router.patch("/applications/:id/approve", requireAdmin, logAdminAction('approve_
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
 
-router.patch("/applications/:id/reject", requireAdmin, logAdminAction('reject_application', 'PhotographerApplication'), async (req, res) => {
+router.patch("/applications/:id/reject", requireRoleOrAdmin("secretary", "reviewer", "support"), logAdminAction('reject_application', 'PhotographerApplication'), async (req, res) => {
   try {
     const app = await PhotographerApplication.findById(req.params.id);
     if (!app) return res.status(404).json({ message: 'Application not found' });

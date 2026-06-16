@@ -13,6 +13,8 @@ import {
   adminGetNotificationStats,
   broadcastNotification,
   getBroadcastHistory,
+  updateBroadcastHistoryItem,
+  deleteBroadcastHistoryItem,
 } from "../controllers/notificationController.js";
 
 const router = express.Router();
@@ -46,6 +48,8 @@ router.post("/admin/broadcast", authenticate, requireStaff, broadcastNotificatio
 
 // Get broadcast history (all staff roles)
 router.get("/admin/broadcast/history", authenticate, requireStaff, getBroadcastHistory);
+router.patch("/admin/broadcast/history", authenticate, requireStaff, updateBroadcastHistoryItem);
+router.delete("/admin/broadcast/history", authenticate, requireStaff, deleteBroadcastHistoryItem);
 
 // Get all shares (admin only)
 router.get("/admin/shares", authenticate, requireAdmin, adminGetAllShares);

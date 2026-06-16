@@ -6,8 +6,11 @@ import User from "../models/users.js";
 // In-memory maps for presence tracking
 const userSockets = new Map(); // userId -> Set<socketId>
 const socketUsers = new Map(); // socketId -> userId
+const socketRoles = new Map(); // socketId -> role
+const STAFF_ROOMS = ["admin", "reviewer", "support", "secretary", "engineer", "marketing"];
 
 let io;
+let staffRefreshInterval = null;
 
 export function initializeSocket(httpServer) {
   io = new Server(httpServer, {
@@ -46,6 +49,7 @@ export function initializeSocket(httpServer) {
 
       socket.userId = userId;
       socket.username = payload?.username || payload?.email || "";
+      socket.role = payload?.role || "";
       next();
     } catch (err) {
       console.error("[socket] Auth error:", err.message);
@@ -63,6 +67,18 @@ export function initializeSocket(httpServer) {
     }
     userSockets.get(userId).add(socket.id);
     socketUsers.set(socket.id, userId);
+    socketRoles.set(socket.id, socket.role || "");
+
+    if (socket.role) {
+      socket.join(`role:${socket.role}`);
+      if (STAFF_ROOMS.includes(socket.role)) {
+        socket.emit("staff:dashboard:refresh", {
+          role: socket.role,
+          timestamp: new Date().toISOString(),
+          reason: "connected",
+        });
+      }
+    }
 
     // Broadcast online status
     socket.broadcast.emit("user_online", { userId });
@@ -135,8 +151,22 @@ export function initializeSocket(httpServer) {
         }
       }
       socketUsers.delete(socket.id);
+      socketRoles.delete(socket.id);
     });
   });
+
+  if (staffRefreshInterval) {
+    clearInterval(staffRefreshInterval);
+  }
+  staffRefreshInterval = setInterval(() => {
+    STAFF_ROOMS.forEach((role) => {
+      io.to(`role:${role}`).emit("staff:dashboard:refresh", {
+        role,
+        timestamp: new Date().toISOString(),
+        reason: "heartbeat",
+      });
+    });
+  }, 30000);
 
   console.log("[socket] Socket.IO initialized");
   return io;
@@ -164,6 +194,11 @@ export function emitToUser(userId, event, data) {
   sockets.forEach((socketId) => {
     io.to(socketId).emit(event, data);
   });
+}
+
+export function emitToRole(role, event, data) {
+  if (!io || !role) return;
+  io.to(`role:${role}`).emit(event, data);
 }
 
 /** Emit an event to all participants in a conversation, optionally excluding one */

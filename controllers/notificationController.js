@@ -4,6 +4,26 @@ import Media from "../models/media.js";
 import ShareToken from "../models/ShareToken.js";
 import emailService from "../services/emailService.js";
 import { emailTemplates } from "../services/emailTemplates.js";
+import { emitToRole, emitToUser } from "../services/socketService.js";
+
+function buildBroadcastMatch({ sender, title, sentAtMinute }) {
+  return {
+    type: "admin",
+    sender,
+    title,
+    $expr: {
+      $eq: [
+        {
+          $dateToString: {
+            format: "%Y-%m-%dT%H:%M",
+            date: "$createdAt",
+          },
+        },
+        sentAtMinute,
+      ],
+    },
+  };
+}
 
 // Get user's notifications
 export const getNotifications = async (req, res) => {
@@ -272,7 +292,8 @@ export const adminGetAllShares = async (req, res) => {
 // Staff/Admin: Broadcast notification to user groups or specific users
 export const broadcastNotification = async (req, res) => {
   try {
-    const senderId = req.user.id;
+    const senderId = req.user?.userId || req.user?.id || req.user?._id;
+    const senderRole = req.user?.role || "";
     const {
       target,          // "all" | "buyers" | "photographers" | "specific"
       recipientIds,    // array of user IDs (required when target === "specific")
@@ -323,6 +344,14 @@ export const broadcastNotification = async (req, res) => {
     }));
 
     const inserted = await Notification.insertMany(docs, { ordered: false });
+    inserted.forEach((notification) => {
+      emitToUser(notification.recipient?.toString(), "notification", notification);
+    });
+    emitToRole(senderRole, "staff:dashboard:refresh", {
+      role: senderRole,
+      reason: "broadcast_created",
+      timestamp: new Date().toISOString(),
+    });
 
     // Respond before starting emails so the client isn't waiting
     res.status(200).json({ message: `Notification sent to ${inserted.length} user(s)`, sent: inserted.length });
@@ -396,10 +425,89 @@ export const getBroadcastHistory = async (req, res) => {
       { $unwind: { path: "$senderInfo", preserveNullAndEmptyArrays: true } },
     ]);
 
-    res.status(200).json({ history });
+    const normalized = history.map((item) => ({
+      ...item,
+      sentAtMinute: item?._id?.createdAt,
+      batchKey: Buffer.from(JSON.stringify({
+        sender: item.sender?.toString?.() || item.sender,
+        title: item.title,
+        sentAtMinute: item?._id?.createdAt,
+      })).toString("base64"),
+    }));
+
+    res.status(200).json({ history: normalized });
   } catch (err) {
     console.error("Error fetching broadcast history:", err);
     res.status(500).json({ error: "Failed to fetch broadcast history" });
+  }
+};
+
+export const updateBroadcastHistoryItem = async (req, res) => {
+  try {
+    const actorId = req.user?.userId || req.user?.id || req.user?._id;
+    const actorRole = req.user?.role || "";
+    const { sender, title, sentAtMinute, updates = {} } = req.body || {};
+
+    if (!sender || !title || !sentAtMinute) {
+      return res.status(400).json({ error: "sender, title, and sentAtMinute are required" });
+    }
+    if (actorRole !== "admin" && String(sender) !== String(actorId)) {
+      return res.status(403).json({ error: "You can only edit your own broadcasts" });
+    }
+
+    const allowedUpdates = {};
+    ["title", "message", "priority", "actionUrl", "actionLabel"].forEach((key) => {
+      if (updates[key] !== undefined) allowedUpdates[key] = updates[key];
+    });
+    if (Object.keys(allowedUpdates).length === 0) {
+      return res.status(400).json({ error: "No valid updates provided" });
+    }
+
+    const result = await Notification.updateMany(
+      buildBroadcastMatch({ sender, title, sentAtMinute }),
+      { $set: allowedUpdates }
+    );
+
+    emitToRole(actorRole, "staff:dashboard:refresh", {
+      role: actorRole,
+      reason: "broadcast_updated",
+      timestamp: new Date().toISOString(),
+    });
+
+    res.status(200).json({ success: true, modifiedCount: result.modifiedCount });
+  } catch (err) {
+    console.error("Error updating broadcast history item:", err);
+    res.status(500).json({ error: "Failed to update broadcast" });
+  }
+};
+
+export const deleteBroadcastHistoryItem = async (req, res) => {
+  try {
+    const actorId = req.user?.userId || req.user?.id || req.user?._id;
+    const actorRole = req.user?.role || "";
+    const { sender, title, sentAtMinute } = req.body || {};
+
+    if (!sender || !title || !sentAtMinute) {
+      return res.status(400).json({ error: "sender, title, and sentAtMinute are required" });
+    }
+    if (actorRole !== "admin" && String(sender) !== String(actorId)) {
+      return res.status(403).json({ error: "You can only delete your own broadcasts" });
+    }
+
+    const result = await Notification.deleteMany(
+      buildBroadcastMatch({ sender, title, sentAtMinute })
+    );
+
+    emitToRole(actorRole, "staff:dashboard:refresh", {
+      role: actorRole,
+      reason: "broadcast_deleted",
+      timestamp: new Date().toISOString(),
+    });
+
+    res.status(200).json({ success: true, deletedCount: result.deletedCount });
+  } catch (err) {
+    console.error("Error deleting broadcast history item:", err);
+    res.status(500).json({ error: "Failed to delete broadcast" });
   }
 };
 
