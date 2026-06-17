@@ -36,6 +36,7 @@ import portfolioRoutes from "./routes/portfolioRoutes.js";
 import reviewRoutes from "./routes/reviewRoutes.js";
 import referralRoutes from "./routes/referralRoutes.js";
 import proofingRoutes from "./routes/proofingRoutes.js";
+import staffOpsRoutes from "./routes/staffOpsRoutes.js";
 import sitemapRoute from "./routes/sitemapRoute.js";
 import { processPendingB2cRetries } from "./controllers/paymentController.js";
 import emailService from "./services/emailService.js";
@@ -236,6 +237,7 @@ app.use("/api/portfolio", portfolioRoutes);
 app.use("/api/reviews", reviewRoutes);
 app.use("/api/referral", referralRoutes);
 app.use("/api/proofing", proofingRoutes);
+app.use("/api/staff-ops", staffOpsRoutes);
 
 // ==================== GLOBAL ERROR HANDLER ====================
 app.use((err, req, res, next) => {

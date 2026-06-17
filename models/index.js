@@ -24,6 +24,14 @@ import MpesaLog from './MpesaLog.js';
 import MpesaRetry from './MpesaRetry.js';
 import Settings from './settings.js';
 import Withdrawal from './Withdrawal.js';
+import SupportTicket from './SupportTicket.js';
+import StaffTask from './StaffTask.js';
+import EngineerIncident from './EngineerIncident.js';
+import BackupRun from './BackupRun.js';
+import DeploymentRecord from './DeploymentRecord.js';
+import MarketingCampaign from './MarketingCampaign.js';
+import MarketingAd from './MarketingAd.js';
+import ContentCalendarEntry from './ContentCalendarEntry.js';
 
 export {
   User,
@@ -45,5 +53,13 @@ export {
   MpesaLog,
   MpesaRetry,
   Settings,
-  Withdrawal
+  Withdrawal,
+  SupportTicket,
+  StaffTask,
+  EngineerIncident,
+  BackupRun,
+  DeploymentRecord,
+  MarketingCampaign,
+  MarketingAd,
+  ContentCalendarEntry
 };
