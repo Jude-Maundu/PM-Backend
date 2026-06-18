@@ -131,6 +131,7 @@ app.use(express.urlencoded({ extended: true, limit: "1mb" }));
 // Serve static files from uploads directory — restrict to known frontend origins
 const allowedUploadOrigins = [
   /^http:\/\/localhost(:[0-9]+)?$/,
+  "https://relicsnap.onrender.com",
   /^https:\/\/pm-frontend.*\.onrender\.com$/,
 ];
 app.use("/uploads", (req, res, next) => {
