@@ -208,7 +208,7 @@ async function updateUser(req, res) {
       return res.status(403).json({ message: "Forbidden: you can only update your own profile" });
     }
 
-    const { username, name, email, password, role, phoneNumber, watermark, profilePicture } = req.body;
+    const { username, name, email, password, role, phoneNumber, watermark, profilePicture, profilePicturePosition, coverImagePosition } = req.body;
     const resolvedUsername = username || name;
 
     // Validate required fields
@@ -280,6 +280,22 @@ async function updateUser(req, res) {
     }
     if (Array.isArray(req.body.equipment)) {
       user.equipment = req.body.equipment;
+    }
+    if (profilePicturePosition && typeof profilePicturePosition === "object") {
+      const x = Number(profilePicturePosition.x);
+      const y = Number(profilePicturePosition.y);
+      user.profilePicturePosition = {
+        x: Number.isFinite(x) ? Math.min(100, Math.max(0, x)) : 50,
+        y: Number.isFinite(y) ? Math.min(100, Math.max(0, y)) : 50,
+      };
+    }
+    if (coverImagePosition && typeof coverImagePosition === "object") {
+      const x = Number(coverImagePosition.x);
+      const y = Number(coverImagePosition.y);
+      user.coverImagePosition = {
+        x: Number.isFinite(x) ? Math.min(100, Math.max(0, x)) : 50,
+        y: Number.isFinite(y) ? Math.min(100, Math.max(0, y)) : 50,
+      };
     }
 
     await user.save();

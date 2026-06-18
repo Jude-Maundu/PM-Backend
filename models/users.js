@@ -8,6 +8,14 @@ const userSchema = new Schema({
   password: { type: String, required: false }, // Not required for Google OAuth users
   googleId: { type: String, sparse: true }, // Google OAuth ID
   profilePicture: { type: String, default: "" },
+  profilePicturePosition: {
+    x: { type: Number, default: 50 },
+    y: { type: Number, default: 50 },
+  },
+  coverImagePosition: {
+    x: { type: Number, default: 50 },
+    y: { type: Number, default: 50 },
+  },
   phoneNumber: { type: String, default: "" },
   payoutPhoneNumber: { type: String, default: "" }, // Photographer payout destination (M-Pesa)
   accountType: {

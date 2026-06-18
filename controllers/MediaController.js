@@ -9,8 +9,22 @@ import Favorite from "../models/Favorite.js";
 function buildWatermarkedUrl(originalUrl, watermarkText) {
   if (!originalUrl || !originalUrl.includes('cloudinary.com/')) return "";
   if (!watermarkText || !watermarkText.trim()) return "";
-  const safeText = watermarkText.trim().replace(/[^\w\s]/g, "").replace(/\s+/g, "_");
-  const transform = `l_text:Arial_28_bold:${safeText},o_55,g_south_east,co_white,x_12,y_12`;
+  const safeText = encodeURIComponent(
+    watermarkText.trim().replace(/[^\w\s-]/g, "").replace(/\s+/g, " ")
+  );
+
+  const transform = [
+    `l_text:Arial_34_bold:${safeText}`,
+    "co_white",
+    "o_38",
+    "a_25",
+    "c_lpad",
+    "w_360",
+    "h_220",
+    "fl_layer_apply",
+    "fl_tiled",
+  ].join(",");
+
   return originalUrl.replace('/upload/', `/upload/${transform}/`);
 }
 
@@ -58,6 +72,51 @@ function normalizeFileUrl(fileUrl) {
   return trimmed;
 }
 
+async function hydrateWatermarkedMedia(items = []) {
+  if (!Array.isArray(items) || items.length === 0) return [];
+
+  const photographerIds = [...new Set(
+    items
+      .map((item) => {
+        const plain = typeof item?.toObject === "function" ? item.toObject() : item;
+        return plain?.photographer?._id || plain?.photographer || null;
+      })
+      .filter(Boolean)
+      .map((id) => String(id))
+  )];
+
+  const photographers = photographerIds.length
+    ? await User.find({ _id: { $in: photographerIds } }).select("watermark username").lean()
+    : [];
+
+  const watermarkMap = new Map(
+    photographers.map((photographer) => [
+      String(photographer._id),
+      photographer?.watermark?.trim() || photographer?.username || "",
+    ])
+  );
+
+  return items.map((item) => {
+    const plain = typeof item?.toObject === "function" ? item.toObject() : item;
+    const photographerId = plain?.photographer?._id || plain?.photographer || null;
+    const watermarkText =
+      watermarkMap.get(String(photographerId || "")) ||
+      plain?.photographer?.username ||
+      plain?.photographerName ||
+      "";
+
+    const normalizedFileUrl = normalizeFileUrl(plain?.fileUrl);
+    const normalizedStoredWatermark = normalizeFileUrl(plain?.watermarkedUrl);
+    const generatedWatermark = buildWatermarkedUrl(normalizedFileUrl || plain?.fileUrl, watermarkText);
+
+    return {
+      ...plain,
+      fileUrl: normalizedFileUrl,
+      watermarkedUrl: generatedWatermark || normalizedStoredWatermark || normalizedFileUrl || "",
+    };
+  });
+}
+
 // ==============================
 // Get all media
 // ==============================
@@ -76,10 +135,7 @@ export async function getAllMedia(req, res) {
       .populate("photographer", "username email");
 
     // Normalize fileUrl for client consumption (some entries store absolute paths)
-    const normalized = media.map((m) => ({
-      ...m.toObject(),
-      fileUrl: normalizeFileUrl(m.fileUrl)
-    }));
+    const normalized = await hydrateWatermarkedMedia(media);
 
     res.status(200).json({ success: true, media: normalized });
 
@@ -115,10 +171,7 @@ export async function getOneMedia(req, res) {
     // Increment view count (fire-and-forget, don't await to keep response fast)
     Media.findByIdAndUpdate(id, { $inc: { viewCount: 1 } }).catch(() => {});
 
-    const normalized = {
-      ...media.toObject(),
-      fileUrl: normalizeFileUrl(media.fileUrl)
-    };
+    const [normalized] = await hydrateWatermarkedMedia([media]);
 
     res.status(200).json({ success: true, media: normalized });
 
@@ -153,10 +206,7 @@ export async function getMyMedia(req, res) {
     const media = await Media.find({ photographer: authUserId })
       .populate("photographer", "username email");
 
-    const normalized = media.map((m) => ({
-      ...m.toObject(),
-      fileUrl: normalizeFileUrl(m.fileUrl)
-    }));
+    const normalized = await hydrateWatermarkedMedia(media);
 
     res.status(200).json(normalized);
   } catch (error) {
@@ -306,7 +356,7 @@ export async function getEventMediaByToken(req, res) {
 // ==============================
 export async function createAlbum(req, res) {
   try {
-    const { name, description, price, isPrivate } = req.body;
+    const { name, description, price, isPrivate, coverImagePosition } = req.body;
     const photographerId = req.user?.userId;
 
     console.log("[createAlbum] Received request", {
@@ -338,9 +388,9 @@ export async function createAlbum(req, res) {
       console.log("[createAlbum] Using URL from body:", coverImage);
     }
 
-    const parsedPrice = Number(price ?? 0);
-    if (Number.isNaN(parsedPrice) || parsedPrice < 0) {
-      return res.status(400).json({ message: "Album price must be a valid non-negative number" });
+    const parsedPrice = Number(price);
+    if (Number.isNaN(parsedPrice) || parsedPrice <= 0) {
+      return res.status(400).json({ message: "Album price must be greater than 0" });
     }
 
     const parsedPrivate = String(isPrivate).toLowerCase() === 'true';
@@ -351,7 +401,11 @@ export async function createAlbum(req, res) {
       coverImage,
       price: parsedPrice,
       photographer: photographerId,
-      isPrivate: parsedPrivate
+      isPrivate: parsedPrivate,
+      coverImagePosition: {
+        x: Number.isFinite(Number(coverImagePosition?.x)) ? Math.min(100, Math.max(0, Number(coverImagePosition.x))) : 50,
+        y: Number.isFinite(Number(coverImagePosition?.y)) ? Math.min(100, Math.max(0, Number(coverImagePosition.y))) : 50,
+      },
     });
 
     console.log("[createAlbum] Album created successfully", { albumId: album._id, name, photographer: photographerId });
@@ -882,7 +936,9 @@ export async function getAlbum(req, res) {
     const media = await Media.find({ album: albumId })
       .populate("photographer", "username");
 
-    res.status(200).json({ album, media });
+    const hydratedMedia = await hydrateWatermarkedMedia(media);
+
+    res.status(200).json({ album, media: hydratedMedia });
   } catch (error) {
     console.error("Error fetching album:", error);
     res.status(500).json({ message: "Error fetching album", error: process.env.NODE_ENV !== "production" ? error.message : undefined });
@@ -906,18 +962,26 @@ export async function updateAlbum(req, res) {
       return res.status(403).json({ message: "You are not allowed to edit this album" });
     }
 
-    const { name, description, price, coverImage, isPrivate } = req.body;
+    const { name, description, price, coverImage, isPrivate, coverImagePosition } = req.body;
 
     if (name !== undefined) album.name = name;
     if (description !== undefined) album.description = description;
     if (price !== undefined) {
       const parsedAlbumPrice = Number(price);
-      if (Number.isNaN(parsedAlbumPrice) || parsedAlbumPrice < 0) {
-        return res.status(400).json({ message: "Album price must be a valid non-negative number" });
+      if (Number.isNaN(parsedAlbumPrice) || parsedAlbumPrice <= 0) {
+        return res.status(400).json({ message: "Album price must be greater than 0" });
       }
       album.price = parsedAlbumPrice;
     }
     if (coverImage !== undefined) album.coverImage = coverImage;
+    if (coverImagePosition && typeof coverImagePosition === "object") {
+      const x = Number(coverImagePosition.x);
+      const y = Number(coverImagePosition.y);
+      album.coverImagePosition = {
+        x: Number.isFinite(x) ? Math.min(100, Math.max(0, x)) : 50,
+        y: Number.isFinite(y) ? Math.min(100, Math.max(0, y)) : 50,
+      };
+    }
     if (isPrivate !== undefined) {
       album.isPrivate = String(isPrivate).toLowerCase() === 'true';
     }

@@ -3,6 +3,74 @@ import Album from "../models/album.js";
 import User from "../models/users.js";
 import ShareToken from "../models/ShareToken.js";
 
+function buildWatermarkedUrl(originalUrl, watermarkText) {
+  if (!originalUrl || !originalUrl.includes("cloudinary.com/")) return "";
+  if (!watermarkText || !watermarkText.trim()) return "";
+
+  const safeText = encodeURIComponent(
+    watermarkText.trim().replace(/[^\w\s-]/g, "").replace(/\s+/g, " ")
+  );
+
+  return originalUrl.replace(
+    "/upload/",
+    `/upload/l_text:Arial_34_bold:${safeText},co_white,o_38,a_25,c_lpad,w_360,h_220,fl_layer_apply,fl_tiled/`
+  );
+}
+
+function normalizeFileUrl(fileUrl) {
+  if (!fileUrl) return fileUrl;
+  const trimmed = fileUrl.toString().trim();
+  if (/^(https?:)?\/\//i.test(trimmed)) return trimmed;
+  const idx = trimmed.indexOf("/uploads/");
+  if (idx !== -1) return trimmed.slice(idx);
+  if (!trimmed.startsWith("/")) return `/uploads/photos/${trimmed}`;
+  return trimmed;
+}
+
+async function hydrateWatermarkedMedia(items = []) {
+  if (!Array.isArray(items) || items.length === 0) return [];
+
+  const photographerIds = [...new Set(
+    items
+      .map((item) => {
+        const plain = typeof item?.toObject === "function" ? item.toObject() : item;
+        return plain?.photographer?._id || plain?.photographer || null;
+      })
+      .filter(Boolean)
+      .map((id) => String(id))
+  )];
+
+  const photographers = photographerIds.length
+    ? await User.find({ _id: { $in: photographerIds } }).select("watermark username").lean()
+    : [];
+
+  const watermarkMap = new Map(
+    photographers.map((photographer) => [
+      String(photographer._id),
+      photographer?.watermark?.trim() || photographer?.username || "",
+    ])
+  );
+
+  return items.map((item) => {
+    const plain = typeof item?.toObject === "function" ? item.toObject() : item;
+    const photographerId = plain?.photographer?._id || plain?.photographer || null;
+    const watermarkText =
+      watermarkMap.get(String(photographerId || "")) ||
+      plain?.photographer?.username ||
+      "";
+
+    const normalizedFileUrl = normalizeFileUrl(plain?.fileUrl);
+    const normalizedStoredWatermark = normalizeFileUrl(plain?.watermarkedUrl);
+    const generatedWatermark = buildWatermarkedUrl(normalizedFileUrl || plain?.fileUrl, watermarkText);
+
+    return {
+      ...plain,
+      fileUrl: normalizedFileUrl,
+      watermarkedUrl: generatedWatermark || normalizedStoredWatermark || normalizedFileUrl || "",
+    };
+  });
+}
+
 function getRequestUserId(req) {
   return (
     req.user?.userId ||
@@ -260,16 +328,16 @@ export async function getLikedMedia(req, res) {
 
 export async function createAlbum(req, res) {
   try {
-    const { name, description, price, coverImage } = req.body;
+    const { name, description, price, coverImage, coverImagePosition } = req.body;
     const userId = getRequestUserId(req);
 
     if (!name || name.trim() === '') {
       return res.status(400).json({ message: "Album name is required" });
     }
 
-    const albumPrice = Number(price ?? 0);
-    if (Number.isNaN(albumPrice) || albumPrice < 0) {
-      return res.status(400).json({ message: "Album price must be a valid non-negative number" });
+    const albumPrice = Number(price);
+    if (Number.isNaN(albumPrice) || albumPrice <= 0) {
+      return res.status(400).json({ message: "Album price must be greater than 0" });
     }
 
     let coverImageUrl = coverImage || '';
@@ -281,6 +349,10 @@ export async function createAlbum(req, res) {
       name: name.trim(),
       description: description?.trim() || '',
       coverImage: coverImageUrl,
+      coverImagePosition: {
+        x: Number.isFinite(Number(coverImagePosition?.x)) ? Math.min(100, Math.max(0, Number(coverImagePosition.x))) : 50,
+        y: Number.isFinite(Number(coverImagePosition?.y)) ? Math.min(100, Math.max(0, Number(coverImagePosition.y))) : 50,
+      },
       price: albumPrice,
       photographer: userId,
       media: [],
@@ -372,7 +444,7 @@ export async function getAlbum(req, res) {
 export async function updateAlbum(req, res) {
   try {
     const { albumId } = req.params;
-    const { name, description, coverImage, price } = req.body;
+    const { name, description, coverImage, price, coverImagePosition } = req.body;
     const userId = getRequestUserId(req);
 
     const album = await Album.findOne({ _id: albumId, photographer: userId });
@@ -387,10 +459,18 @@ export async function updateAlbum(req, res) {
     } else if (coverImage !== undefined) {
       album.coverImage = coverImage;
     }
+    if (coverImagePosition && typeof coverImagePosition === "object") {
+      const x = Number(coverImagePosition.x);
+      const y = Number(coverImagePosition.y);
+      album.coverImagePosition = {
+        x: Number.isFinite(x) ? Math.min(100, Math.max(0, x)) : 50,
+        y: Number.isFinite(y) ? Math.min(100, Math.max(0, y)) : 50,
+      };
+    }
     if (price !== undefined) {
       const albumPrice = Number(price);
-      if (Number.isNaN(albumPrice) || albumPrice < 0) {
-        return res.status(400).json({ message: "Album price must be a valid non-negative number" });
+      if (Number.isNaN(albumPrice) || albumPrice <= 0) {
+        return res.status(400).json({ message: "Album price must be greater than 0" });
       }
       album.price = albumPrice;
     }
@@ -762,12 +842,26 @@ export async function getPublicAlbumById(req, res) {
     }).select('title price fileUrl watermarkedUrl imageUrl mediaType downloads views likes isApproved description');
 
     const allMedia = [...album.media, ...linkedMedia];
+    const hydratedMedia = await hydrateWatermarkedMedia(allMedia);
+    const photographerWatermark =
+      album.photographer?.watermark ||
+      (await User.findById(album.photographer?._id || album.photographer).select("watermark username").lean())?.watermark ||
+      album.photographer?.username ||
+      "";
+    const watermarkedCover =
+      buildWatermarkedUrl(normalizeFileUrl(album.coverImage), photographerWatermark) ||
+      normalizeFileUrl(album.coverImage);
 
     Album.findByIdAndUpdate(albumId, { $inc: { views: 1 } }).catch(() => {});
 
     res.status(200).json({
       success: true,
-      album: { ...album.toObject(), media: allMedia, mediaCount: allMedia.length }
+      album: {
+        ...album.toObject(),
+        coverImage: watermarkedCover,
+        media: hydratedMedia,
+        mediaCount: hydratedMedia.length,
+      }
     });
   } catch (error) {
     console.error("Error fetching public album:", error);

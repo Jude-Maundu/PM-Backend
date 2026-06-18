@@ -4,6 +4,10 @@ const albumSchema = new mongoose.Schema({
   name: { type: String, required: true },
   description: { type: String, default: '' },
   coverImage: { type: String, default: '' },
+  coverImagePosition: {
+    x: { type: Number, default: 50 },
+    y: { type: Number, default: 50 },
+  },
 
   // Pricing (0 = free or pay-per-photo only)
   price: { type: Number, default: 0 },
